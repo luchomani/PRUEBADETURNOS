@@ -9,14 +9,10 @@ import os
 import json
 import math
 import time
-import copy
-import uuid
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
 try:
     import qrcode
@@ -25,7 +21,7 @@ except ImportError:
     HAS_QR = False
 
 try:
-    # 🔧 RESTAURADO: Librería de geolocalización y memoria local
+    # 🔧 Funciones de geolocalización y memoria local recuperadas
     from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
     HAS_GEO = True
 except ImportError:
@@ -42,7 +38,7 @@ st.set_page_config(
 )
 
 # ==========================================================================
-# CSS CORPORATIVO (Intacto)
+# CSS CORPORATIVO
 # ==========================================================================
 st.markdown("""
 <style>
@@ -95,7 +91,7 @@ st.markdown("""
     .card-salida { background: #FFFFFF; border: 1px solid #E8BFBF; border-left: 4px solid var(--zfc-danger); padding: 16px; border-radius: 0 0 8px 8px; margin-bottom: 10px; text-align: center; }
     .card-placa { font-size: 30px; font-weight: 900; letter-spacing: 3px; font-family: 'Courier New', monospace; color: var(--zfc-green-dark); margin: 4px 0; }
     .card-placa-sal { font-size: 30px; font-weight: 900; letter-spacing: 3px; font-family: 'Courier New', monospace; color: var(--zfc-danger); margin: 4px 0; }
-    .card-ficho { font-size: 20px; font-weight: 800; color: var(--zfc-text-soft); letter-spacing: 2px; text-transform: uppercase; }
+    .card-ficho { font-size: 12px; font-weight: 700; color: var(--zfc-text-soft); letter-spacing: 2px; text-transform: uppercase; }
     .card-detalle { font-size: 13px; color: #333; margin-top: 4px; }
     .card-aviso { display: inline-block; font-size: 12px; background: #F5F7F6; padding: 4px 10px; border-radius: 4px; margin-top: 6px; color: #2C3E50; font-weight: 600; }
     .role-card { background: #FFFFFF; border: 1px solid var(--zfc-border); border-top: 4px solid var(--zfc-green-main); border-radius: 10px; padding: 28px 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04); height: 100%; }
@@ -111,43 +107,28 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================================================
-# CAPA DE DATOS (Intacto)
+# CAPA DE DATOS
 # ==========================================================================
 DATA_FILE = "turnos_zfc.json"
 CONFIG_FILE = "config_zfc.json"
 
 DEFAULT_CONFIG = {
-    "config_version": 2, 
     "tiempo_en_pantalla_min": 30,
-    "usuario_admin": "ZONAFRANCA123-",
-    "contrasena_admin": "ZONAFRANCA123-",
-    "usuario_vigilante": "VIGILANTE123-",
-    "contrasena_vigilante": "VIGILANTE123-",
+    "usuario_admin": "Zona Franca Santander",
+    "contrasena_admin": "ZONAFRANCA123",
+    "usuario_vigilante": "Vigilante",
+    "contrasena_vigilante": "VIGILANTE2026",
     "url_base": "",
     "radio_geofence_km": 3.0,
     "zfc_lat": 7.90750,
     "zfc_lon": -72.50472,
     "bodegas": [
-        "OTRA BODEGA",
-        "ALFRANCA CUCUTA S.A.S.",
-        "ALMACODER SAS",
-        "ALMANORTE S.A.S",
-        "BERZATEX S.A.S.",
-        "COSMOGREEN SAS",
-        "DEL BEN SAS",
-        "GLEX S.A.S.",
-        "GRUPO EMPRESARIAL SUAPEL S.A.S.",
-        "HSQ GROUP INTERNATIONAL SAS",
-        "INDULOGISTICS SAS",
-        "INTERNATIONAL FRONTIER S.A.S.",
-        "INVERSIONES CARGAMAX HYJ S.A.S.",
-        "LOGISTICA ADUANERA J.H. LTDA",
-        "LOGISTICA COEX SAS",
-        "M.B. INDUSTRIAS Y SERVICIOS SAS",
-        "MANUFEX GROUP S.A.S.",
-        "SETRACOMEX S.A.S.",
-        "TRENDS LOVERS S.A.S.",
-        "VEHIMAQ ZONA FRANCA SAS"
+        "Bodega Principal / Generica",
+        "Alfranca Cucuta S.A.S.",
+        "Inversiones Cargamax HYJ S.A.S.",
+        "Logistica Aduanera J.H. Ltda.",
+        "Setracomex S.A.S.",
+        "Otra Bodega / Operador",
     ],
 }
 
@@ -155,18 +136,8 @@ def ahora_str():
     colombia_tz = timezone(timedelta(hours=-5))
     return datetime.now(colombia_tz).strftime("%Y-%m-%d %H:%M:%S")
 
-def obtener_ultimo_corte():
-    colombia_tz = timezone(timedelta(hours=-5))
-    ahora = datetime.now(colombia_tz)
-    if ahora.hour >= 18:
-        return ahora.replace(hour=18, minute=0, second=0, microsecond=0)
-    else:
-        ayer = ahora - timedelta(days=1)
-        return ayer.replace(hour=18, minute=0, second=0, microsecond=0)
-
 def _migrar_campos(item):
     defaults = {
-        "uid": str(uuid.uuid4()),
         "tipo_movimiento": "Ingresar",
         "fecha_hora": ahora_str(),
         "mostrar_en_pantalla": False,
@@ -176,7 +147,6 @@ def _migrar_campos(item):
         "checklist_ingreso": {},
         "checklist_salida": {},
         "observaciones_vigilante": "",
-        "observaciones_conductor": "",
         "telefono": "",
     }
     for k, v in defaults.items():
@@ -203,13 +173,6 @@ def cargar_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                if cfg.get("config_version", 1) < DEFAULT_CONFIG["config_version"]:
-                    cfg["config_version"] = DEFAULT_CONFIG["config_version"]
-                    cfg["contrasena_admin"] = DEFAULT_CONFIG["contrasena_admin"]
-                    cfg["usuario_vigilante"] = DEFAULT_CONFIG["usuario_vigilante"]
-                    cfg["contrasena_vigilante"] = DEFAULT_CONFIG["contrasena_vigilante"]
-                    cfg["bodegas"] = DEFAULT_CONFIG["bodegas"]
-                    guardar_config(cfg)
                 return {**DEFAULT_CONFIG, **cfg}
         except Exception:
             pass
@@ -220,7 +183,7 @@ def guardar_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 # ==========================================================================
-# HELPERS Y EXPORTACIÓN A EXCEL (Intacto)
+# HELPERS Y GEOFENCING
 # ==========================================================================
 def calcular_distancia_km(lat1, lon1, lat2, lon2):
     R = 6371.0
@@ -270,48 +233,22 @@ def badge_html(estado_raw):
         return '<span class="badge badge-finalizado">Finalizado</span>'
     return '<span class="badge badge-espera">En Espera</span>'
 
-def buscar_turno(turnos, uid):
-    return next((t for t in turnos if t.get("uid") == uid), None)
+def buscar_turno(turnos, id_turno):
+    return next((t for t in turnos if t.get("id_turno") == id_turno), None)
 
 def generar_qr_png(url: str):
     if not HAS_QR or not url:
         return None
     try:
-        qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=15, border=4)
+        qr = qrcode.QRCode(version=None, box_size=10, border=2)
         qr.add_data(url)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#000000", back_color="#FFFFFF")
+        img = qr.make_image(fill_color="#12402A", back_color="white")
         buf = BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()
     except Exception:
         return None
-
-def generar_excel(df, filename="reporte.xlsx"):
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Reporte')
-        ws = writer.sheets['Reporte']
-        header_fill = PatternFill(start_color="1B4D3E", end_color="1B4D3E", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        thin_border = Border(left=Side(style="thin", color="D9D9D9"), right=Side(style="thin", color="D9D9D9"), top=Side(style="thin", color="D9D9D9"), bottom=Side(style="thin", color="D9D9D9"))
-        for col_idx in range(1, len(df.columns) + 1):
-            cell = ws.cell(row=1, column=col_idx)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.border = thin_border
-            max_length = len(str(df.columns[col_idx - 1]))
-            for val in df.iloc[:, col_idx - 1]:
-                max_length = max(max_length, len(str(val)))
-            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_length + 3, 40)
-        for row_idx in range(2, len(df) + 2):
-            for col_idx in range(1, len(df.columns) + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                cell.border = thin_border
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-        ws.freeze_panes = "A2"
-    return buffer.getvalue()
 
 def render_header_institucional():
     c1, c2, c3 = st.columns([1.5, 3, 1.5])
@@ -324,9 +261,6 @@ def render_header_institucional():
         st.markdown("""
         <div style="text-align:center;">
             <div class="inst-title">Sistema de Enturnamiento y Control de Accesos</div>
-            <div class="inst-sub" style="font-size: 14px; font-weight: 600; color: #1B4D3E; margin-top: 4px;">
-                Ingresos y salidas de Resto del mundo
-            </div>
             <div class="inst-sub">ZONA FRANCA DE CÚCUTA · OPERADA POR ZONA FRANCA SANTANDER</div>
         </div>
         """, unsafe_allow_html=True)
@@ -337,11 +271,8 @@ def render_header_institucional():
                 break
 
 # ==========================================================================
-# SESSION STATE Y PERSISTENCIA (Restaurado local storage)
+# SESSION STATE Y PERSISTENCIA
 # ==========================================================================
-if "historial_turnos" not in st.session_state:
-    st.session_state.historial_turnos = []
-
 if "auth_operador" not in st.session_state:
     st.session_state.auth_operador = False
 if "auth_vigilante" not in st.session_state:
@@ -354,22 +285,23 @@ try:
     modo_qp = (qp.get("modo") or "").strip().lower()
     
     if st.session_state.mi_turno_id is None and "t" in qp:
-        st.session_state.mi_turno_id = qp.get("t")
-        
-    # 🔧 RESTAURADO: Recuperar de memoria local
+        val_t = qp.get("t")
+        turno_encontrado = next((t for t in cargar_datos() if t.get("id_turno") == val_t), None)
+        if turno_encontrado:
+            st.session_state.mi_turno_id = turno_encontrado.get("id_turno")
+            
     if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
-        uid_local = get_local_storage("mi_turno_uid")
+        uid_local = get_local_storage("mi_turno_id")
         if uid_local:
-            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
+            turno_encontrado = next((t for t in cargar_datos() if t.get("id_turno") == uid_local), None)
             if turno_encontrado:
-                st.session_state.mi_turno_id = turno_encontrado.get("uid")
+                st.session_state.mi_turno_id = turno_encontrado.get("id_turno")
                 try:
-                    st.query_params["t"] = turno_encontrado.get("uid")
+                    st.query_params["t"] = turno_encontrado.get("id_turno")
                 except Exception:
                     pass
-        
+
     ahora_ts = time.time()
-    
     if not st.session_state.auth_operador and "op_ts" in qp:
         try:
             if ahora_ts - float(qp["op_ts"]) < 7200:
@@ -383,7 +315,6 @@ try:
                 st.session_state.auth_vigilante = True
         except ValueError:
             pass
-
 except Exception:
     qp = {}
     modo_qp = ""
@@ -391,7 +322,7 @@ except Exception:
 CONFIG = cargar_config()
 
 # ==========================================================================
-# MODO: PANTALLA TV (Intacto)
+# MODO: PANTALLA TV
 # ==========================================================================
 if modo_qp == "pantalla":
     @st.fragment(run_every=4)
@@ -445,6 +376,7 @@ if modo_qp == "pantalla":
                     <div class="card-ingreso">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa">{t['placa']}</div>
+                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or 'Sin mensaje'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -459,12 +391,17 @@ if modo_qp == "pantalla":
                     <div class="card-salida">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa-sal">{t['placa']}</div>
+                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or 'Sin mensaje'}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown(f"<div style='text-align:center; color:#6B7280; font-size:12px;'>Última actualización: {ahora_str()}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='text-align:center; color:#6B7280; font-size:12px;'>"
+            f"Última actualización: {ahora_str()}</div>",
+            unsafe_allow_html=True,
+        )
 
     pantalla_publica()
     st.stop()
@@ -477,7 +414,19 @@ if modo_qp == "conductor":
     st.markdown("<h3 style='text-align:center;'>Portal del Conductor</h3>", unsafe_allow_html=True)
 
     st.markdown("""
-    <div style="background: linear-gradient(135deg, #E6F0EB 0%, #D1E7DD 100%); border: 1px solid #B8D4C5; border-left: 5px solid #1B4D3E; padding: 16px 20px; border-radius: 8px; margin: 15px 0 25px 0; color: #12402A; box-shadow: 0 4px 6px rgba(0,0,0,0.04); font-size: 15px; font-weight: 600; text-align: center;">
+    <div style="
+        background: linear-gradient(135deg, #E6F0EB 0%, #D1E7DD 100%);
+        border: 1px solid #B8D4C5;
+        border-left: 5px solid #1B4D3E;
+        padding: 16px 20px;
+        border-radius: 8px;
+        margin: 15px 0 25px 0;
+        color: #12402A;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        font-size: 15px;
+        font-weight: 600;
+        text-align: center;
+    ">
         ¡Bienvenido a la Zona Franca de Cúcuta! Si vienes de algún Puerto o de otra Zona Franca, te invitamos a que te enturnes.
     </div>
     """, unsafe_allow_html=True)
@@ -510,7 +459,9 @@ if modo_qp == "conductor":
                     <hr class="ticket-divider">
                     <div class="ticket-info"><b>Destino:</b> {actual.get('bodega','—')}</div>
                     <div class="ticket-info"><b>Movimiento:</b> {actual.get('tipo_movimiento','Ingresar')}</div>
-                    <div class="ticket-info" style="font-size:12px; color:#A9BCB2; margin-top:6px;">Registrado: {fecha_legible(actual.get('fecha_hora',''))}</div>
+                    <div class="ticket-info" style="font-size:12px; color:#A9BCB2; margin-top:6px;">
+                        Registrado: {fecha_legible(actual.get('fecha_hora',''))}
+                    </div>
                     <div style="margin-top:16px;">{badge_html(actual.get('estado',''))}</div>
                     <div class="ticket-mensaje">
                         <div class="ticket-label" style="font-size:10px;">Mensaje del Operador</div>
@@ -519,22 +470,23 @@ if modo_qp == "conductor":
                 </div>
                 """, unsafe_allow_html=True)
 
-                if actual.get("observaciones_conductor"): st.info(f"**Tus observaciones:** {actual['observaciones_conductor']}")
-                if actual.get("fecha_ingreso_zf"): st.markdown(f"<div style='text-align:center; color:#1B4D3E; font-weight:600; padding:10px; background:#E6F0EB; border-radius:6px; margin-top:10px;'><b>Ingreso confirmado por vigilante:</b> {fecha_legible(actual['fecha_ingreso_zf'])}</div>", unsafe_allow_html=True)
-                if actual.get("fecha_salida_zf"): st.markdown(f"<div style='text-align:center; color:#9B1C1C; font-weight:600; padding:10px; background:#FCE9E9; border-radius:6px; margin-top:10px;'><b>Salida confirmada por vigilante:</b> {fecha_legible(actual['fecha_salida_zf'])}</div>", unsafe_allow_html=True)
+                if actual.get("fecha_ingreso_zf"):
+                    st.markdown(f"<div style='text-align:center; color:#1B4D3E; font-weight:600; padding:10px; background:#E6F0EB; border-radius:6px; margin-top:10px;'><b>Ingreso confirmado por vigilante:</b> {fecha_legible(actual['fecha_ingreso_zf'])}</div>", unsafe_allow_html=True)
+                if actual.get("fecha_salida_zf"):
+                    st.markdown(f"<div style='text-align:center; color:#9B1C1C; font-weight:600; padding:10px; background:#FCE9E9; border-radius:6px; margin-top:10px;'><b>Salida confirmada por vigilante:</b> {fecha_legible(actual['fecha_salida_zf'])}</div>", unsafe_allow_html=True)
 
             tiquet_vivo()
 
             st.markdown("<br>", unsafe_allow_html=True)
             col_a, col_b = st.columns(2)
             with col_a:
-                if st.button("Actualizar Estado Manualmente", use_container_width=True):
+                if st.button("Actualizar Estado", use_container_width=True):
                     st.rerun()
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
                     if HAS_GEO:
-                        try: delete_local_storage("mi_turno_uid")
+                        try: delete_local_storage("mi_turno_id")
                         except Exception: pass
                     try:
                         st.query_params.clear()
@@ -544,9 +496,11 @@ if modo_qp == "conductor":
                     st.rerun()
 
         else:
-            # 🔧 AQUI ESTABA TU SIMULACIÓN. SE HA REEMPLAZADO POR LA VERIFICACIÓN GPS REAL.
+            # ==============================================================
+            # Verificación de ubicación GPS
+            # ==============================================================
             if not HAS_GEO:
-                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
+                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya.")
                 st.stop()
 
             if "geo_data" not in st.session_state: st.session_state.geo_data = None
@@ -556,6 +510,7 @@ if modo_qp == "conductor":
             if st.session_state.geo_data is None and st.session_state.geo_error is None:
                 st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
                 loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
+                
                 if loc is not None:
                     try:
                         if isinstance(loc, dict) and "coords" in loc:
@@ -608,16 +563,14 @@ if modo_qp == "conductor":
 
             st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
             st.markdown("Completa tus datos para asignarte un turno.")
-            st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
+            st.caption("Todos los campos con (*) son obligatorios")
 
             with st.form("form_conductor", clear_on_submit=False):
                 placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
                 nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
                 cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
                 telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
-                bodega = st.selectbox("Bodega de Destino (Opcional)", ["Seleccione una bodega..."] + CONFIG.get("bodegas", []))
-                observaciones_conductor = st.text_area("Observaciones (Opcional)", placeholder="Si tienes alguna nota sobre tu vehículo o carga, escríbela aquí...")
-                
+                bodega = st.selectbox("Bodega de Destino *", ["Seleccione una bodega..."] + CONFIG.get("bodegas", []))
                 submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
 
                 if submitted:
@@ -626,6 +579,7 @@ if modo_qp == "conductor":
                     if not nombre: errores.append("El nombre del conductor es obligatorio.")
                     if not cedula: errores.append("El número de cédula es obligatorio.")
                     if not telefono: errores.append("El teléfono de contacto es obligatorio.")
+                    if bodega == "Seleccione una bodega...": errores.append("Debes seleccionar una bodega de destino.")
                     if cedula and not cedula.isdigit(): errores.append("La cédula debe contener solo números.")
                     if telefono and not telefono.isdigit(): errores.append("El teléfono debe contener solo números.")
                     if telefono and len(telefono) < 7: errores.append("El teléfono debe tener al menos 7 dígitos.")
@@ -639,31 +593,27 @@ if modo_qp == "conductor":
                         
                         activo = next((t for t in actuales if t.get("placa", "").replace(" ", "").upper() == placa_clean and "FINALIZADO" not in (t.get("estado") or "").upper()), None)
                         if activo:
-                            st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
-                            st.session_state.mi_turno_id = activo["uid"]
+                            st.warning(f"La placa {placa} ya tiene turno activo: {activo['id_turno']}")
+                            st.session_state.mi_turno_id = activo["id_turno"]
                             if HAS_GEO:
-                                try: set_local_storage("mi_turno_uid", activo["uid"])
+                                try: set_local_storage("mi_turno_id", activo["id_turno"])
                                 except Exception: pass
-                            try: st.query_params["t"] = activo["uid"]
+                            try: st.query_params["t"] = activo["id_turno"]
                             except Exception: pass
                             st.rerun()
                         else:
-                            st.session_state.historial_turnos.append(copy.deepcopy(actuales))
-                            ultimo_corte = obtener_ultimo_corte()
-                            corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
-                            turnos_jornada = [t for t in actuales if t.get("fecha_hora", "") >= corte_str]
-                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in turnos_jornada if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
+                            # Generación segura de IDs
+                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in actuales if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
                             nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
                             turno_str = f"T-{nuevo_num:03d}"
 
                             nuevo = {
-                                "uid": str(uuid.uuid4()),
                                 "id_turno": turno_str,
                                 "placa": placa_clean,
                                 "nombre": nombre,
                                 "cedula": cedula,
                                 "telefono": telefono,
-                                "bodega": bodega if bodega != "Seleccione una bodega..." else "",
+                                "bodega": bodega,
                                 "tipo_movimiento": "Ingresar",
                                 "estado": "En Espera",
                                 "fecha_hora": ahora_str(),
@@ -675,16 +625,14 @@ if modo_qp == "conductor":
                                 "checklist_ingreso": {},
                                 "checklist_salida": {},
                                 "observaciones_vigilante": "",
-                                "observaciones_conductor": observaciones_conductor,
                             }
                             actuales.append(nuevo)
                             guardar_datos(actuales)
-                            
-                            st.session_state.mi_turno_id = nuevo["uid"]
+                            st.session_state.mi_turno_id = turno_str
                             if HAS_GEO:
-                                try: set_local_storage("mi_turno_uid", nuevo["uid"])
+                                try: set_local_storage("mi_turno_id", turno_str)
                                 except Exception: pass
-                            try: st.query_params["t"] = nuevo["uid"]
+                            try: st.query_params["t"] = turno_str
                             except Exception: pass
                             st.rerun()
 
@@ -699,11 +647,11 @@ if modo_qp == "conductor":
                     p_buscar_clean = p_buscar.replace(" ", "").upper()
                     encontrado = next((t for t in reversed(tb) if t.get("placa", "").replace(" ", "").upper() == p_buscar_clean and "FINALIZADO" not in (t.get("estado") or "").upper()), None)
                     if encontrado:
-                        st.session_state.mi_turno_id = encontrado["uid"]
+                        st.session_state.mi_turno_id = encontrado["id_turno"]
                         if HAS_GEO:
-                            try: set_local_storage("mi_turno_uid", encontrado["uid"])
+                            try: set_local_storage("mi_turno_id", encontrado["id_turno"])
                             except Exception: pass
-                        try: st.query_params["t"] = encontrado["uid"]
+                        try: st.query_params["t"] = encontrado["id_turno"]
                         except Exception: pass
                         st.rerun()
                     else:
@@ -712,7 +660,7 @@ if modo_qp == "conductor":
     st.stop()
 
 # ==========================================================================
-# MODO: VIGILANTE (Intacto)
+# MODO: VIGILANTE
 # ==========================================================================
 if modo_qp == "vigilante":
     render_header_institucional()
@@ -742,120 +690,87 @@ if modo_qp == "vigilante":
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_vig"):
             st.session_state.auth_vigilante = False
             try:
-                if "vig_ts" in st.query_params: del st.query_params["vig_ts"]
-            except Exception: pass
+                if "vig_ts" in st.query_params:
+                    del st.query_params["vig_ts"]
+            except Exception:
+                pass
             st.rerun()
 
     st.markdown("---")
 
-    tab_control, tab_historial_vig = st.tabs(["Control de Acceso", "Historial"])
+    @st.fragment(run_every=5)
+    def panel_vigilante():
+        turnos = cargar_datos()
+        pendientes_ing = [t for t in turnos if "INGRESAR" in (t.get("estado") or "").upper() and "ZONA" not in (t.get("estado") or "").upper() and "FINALIZADO" not in (t.get("estado") or "").upper() and not t.get("fecha_ingreso_zf")]
+        pendientes_sal = [t for t in turnos if "SALIR" in (t.get("estado") or "").upper() and "FINALIZADO" not in (t.get("estado") or "").upper() and not t.get("fecha_salida_zf")]
 
-    with tab_control:
-        @st.fragment(run_every=5)
-        def panel_vigilante():
-            turnos = cargar_datos()
-            pendientes_ing = [t for t in turnos if "INGRESAR" in (t.get("estado") or "").upper() and "ZONA" not in (t.get("estado") or "").upper() and "FINALIZADO" not in (t.get("estado") or "").upper() and not t.get("fecha_ingreso_zf")]
-            pendientes_sal = [t for t in turnos if "SALIR" in (t.get("estado") or "").upper() and "FINALIZADO" not in (t.get("estado") or "").upper() and not t.get("fecha_salida_zf")]
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Pendientes de Ingreso", len(pendientes_ing))
+        m2.metric("Pendientes de Salida", len(pendientes_sal))
+        m3.metric("Total en Sistema", len(turnos))
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Pendientes de Ingreso", len(pendientes_ing))
-            m2.metric("Pendientes de Salida", len(pendientes_sal))
-            m3.metric("Total en Sistema", len(turnos))
+        st.markdown("---")
 
-            st.markdown("---")
+        col_i, col_s = st.columns(2)
+        with col_i:
+            st.markdown('<div class="col-header-ing">CHECK IN · INGRESOS</div>', unsafe_allow_html=True)
+            if not pendientes_ing:
+                st.markdown('<div class="empty-state">Sin vehículos pendientes de ingreso.</div>', unsafe_allow_html=True)
+            else:
+                for t in pendientes_ing:
+                    with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
+                        st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
+                        st.markdown(f"**Bodega:** {t.get('bodega','')}")
+                        st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
+                        if t.get("mensaje_admin"): st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
 
-            col_i, col_s = st.columns(2)
-            with col_i:
-                st.markdown('<div class="col-header-ing">CHECK IN · INGRESOS</div>', unsafe_allow_html=True)
-                if not pendientes_ing:
-                    st.markdown('<div class="empty-state">Sin vehículos pendientes de ingreso.</div>', unsafe_allow_html=True)
-                else:
-                    for t in pendientes_ing:
-                        with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
-                            st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
-                            st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
-                            if t.get("bodega"): st.markdown(f"**Bodega:** {t['bodega']}")
-                            st.caption(f"Registrado: {fecha_legible(t.get('fecha_hora',''))}")
-                            if t.get("observaciones_conductor"): st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
-                            if t.get("mensaje_admin"): st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            if st.button("Ingreso Autorizado", key=f"btn_in_{t['uid']}", use_container_width=True):
-                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
-                                hora_conf = ahora_str()
-                                todos = cargar_datos()
-                                for x in todos:
-                                    if x["uid"] == t["uid"]:
-                                        x["fecha_ingreso_zf"] = hora_conf
-                                        x["estado"] = "EN ZONA FRANCA"
-                                        x["mostrar_en_pantalla"] = False
-                                        break
-                                guardar_datos(todos)
-                                st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
-                                st.rerun()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("Ingreso Autorizado", key=f"btn_in_{t['id_turno']}", use_container_width=True):
+                            hora_conf = ahora_str()
+                            todos = cargar_datos()
+                            for x in todos:
+                                if x["id_turno"] == t["id_turno"]:
+                                    x["fecha_ingreso_zf"] = hora_conf
+                                    x["estado"] = "EN ZONA FRANCA"
+                                    x["mostrar_en_pantalla"] = False
+                                    break
+                            guardar_datos(todos)
+                            st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
+                            st.rerun()
 
-            with col_s:
-                st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
-                if not pendientes_sal:
-                    st.markdown('<div class="empty-state">Sin vehículos pendientes de salida.</div>', unsafe_allow_html=True)
-                else:
-                    for t in pendientes_sal:
-                        with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
-                            st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
-                            st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
-                            if t.get("bodega"): st.markdown(f"**Bodega:** {t['bodega']}")
-                            if t.get("fecha_ingreso_zf"): st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
-                            if t.get("observaciones_conductor"): st.info(f"**Observación del Conductor:** {t['observaciones_conductor']}")
-                            if t.get("mensaje_admin"): st.markdown(f"**Mensaje Operador:** {t['mensaje_admin']}")
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            if st.button("Salida Autorizada", key=f"btn_out_{t['uid']}", use_container_width=True):
-                                st.session_state.historial_turnos.append(copy.deepcopy(turnos))
-                                hora_conf = ahora_str()
-                                todos = cargar_datos()
-                                for x in todos:
-                                    if x["uid"] == t["uid"]:
-                                        x["fecha_salida_zf"] = hora_conf
-                                        x["estado"] = "FINALIZADO"
-                                        x["mostrar_en_pantalla"] = False
-                                        break
-                                guardar_datos(todos)
-                                st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
-                                st.rerun()
+        with col_s:
+            st.markdown('<div class="col-header-sal">CHECK OUT · SALIDAS</div>', unsafe_allow_html=True)
+            if not pendientes_sal:
+                st.markdown('<div class="empty-state">Sin vehículos pendientes de salida.</div>', unsafe_allow_html=True)
+            else:
+                for t in pendientes_sal:
+                    with st.expander(f"{t['placa']} · {t['id_turno']}", expanded=False):
+                        st.markdown(f"**Conductor:** {t.get('nombre','')} — C.C. {t.get('cedula','')}")
+                        st.markdown(f"**Teléfono:** {t.get('telefono','—')}")
+                        st.markdown(f"**Bodega:** {t.get('bodega','')}")
+                        if t.get("fecha_ingreso_zf"): st.caption(f"Ingresó: {fecha_legible(t['fecha_ingreso_zf'])}")
+                        if t.get("mensaje_admin"): st.markdown(f"**Mensaje:** {t['mensaje_admin']}")
 
-        panel_vigilante()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("Salida Autorizada", key=f"btn_out_{t['id_turno']}", use_container_width=True):
+                            hora_conf = ahora_str()
+                            todos = cargar_datos()
+                            for x in todos:
+                                if x["id_turno"] == t["id_turno"]:
+                                    x["fecha_salida_zf"] = hora_conf
+                                    x["estado"] = "FINALIZADO"
+                                    x["mostrar_en_pantalla"] = False
+                                    break
+                            guardar_datos(todos)
+                            st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
+                            st.rerun()
 
-    with tab_historial_vig:
-        st.markdown("#### Historial General de Turnos")
-        turnos_h = cargar_datos()
-        if not turnos_h:
-            st.info("No hay turnos registrados.")
-        else:
-            df = pd.DataFrame(turnos_h)
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Total", len(df))
-            m2.metric("En Espera", len(df[df["estado"].astype(str).str.contains("Espera", case=False, na=False)]))
-            m3.metric("Autorizados", len(df[df["estado"].astype(str).str.contains("AUTORIZADO", case=False, na=False)]))
-            m4.metric("Finalizados", len(df[df["estado"].astype(str).str.contains("FINALIZADO", case=False, na=False)]))
-            st.markdown("---")
-            df["fecha_hora"] = df["fecha_hora"].apply(fecha_legible)
-            df["fecha_autorizacion"] = df["fecha_autorizacion"].apply(fecha_legible)
-            df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
-            df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
-            cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_conductor", "observaciones_vigilante"]
-            cols_disp = [c for c in cols if c in df.columns]
-            df_v = df[cols_disp].rename(columns={
-                "id_turno": "Turno", "placa": "Placa", "nombre": "Conductor", "cedula": "Cédula", "telefono": "Teléfono",
-                "fecha_hora": "Fecha Registro", "bodega": "Bodega", "tipo_movimiento": "Movimiento", "estado": "Estado",
-                "mensaje_admin": "Mensaje", "fecha_autorizacion": "Autorizado Operador", "fecha_ingreso_zf": "Ingreso Vigilante",
-                "fecha_salida_zf": "Salida Vigilante", "observaciones_conductor": "Obs. Conductor", "observaciones_vigilante": "Obs. Vigilante",
-            })
-            st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
-            excel_data = generar_excel(df_v)
-            st.download_button("Descargar Excel", data=excel_data, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-
+    panel_vigilante()
     st.stop()
 
 # ==========================================================================
-# MODO: OPERADOR (Intacto)
+# MODO: OPERADOR
 # ==========================================================================
 if modo_qp == "operador":
     render_header_institucional()
@@ -885,13 +800,17 @@ if modo_qp == "operador":
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_op"):
             st.session_state.auth_operador = False
             try:
-                if "op_ts" in st.query_params: del st.query_params["op_ts"]
-            except Exception: pass
+                if "op_ts" in st.query_params:
+                    del st.query_params["op_ts"]
+            except Exception:
+                pass
             st.rerun()
 
     st.markdown("---")
 
-    tab_gestion, tab_pantalla, tab_qr, tab_config, tab_historial = st.tabs(["Gestión de Turnos", "Pantalla Pública", "Código QR", "Configuración", "Historial"])
+    tab_gestion, tab_pantalla, tab_qr, tab_config, tab_historial = st.tabs([
+        "Gestión de Turnos", "Pantalla Pública", "Código QR", "Configuración", "Historial"
+    ])
 
     # --- GESTIÓN ---
     with tab_gestion:
@@ -899,13 +818,6 @@ if modo_qp == "operador":
         if not turnos_g:
             st.info("No hay turnos registrados.")
         else:
-            if st.session_state.historial_turnos:
-                if st.button("Deshacer Última Acción", type="primary", key="btn_undo"):
-                    ultimo_estado = st.session_state.historial_turnos.pop()
-                    guardar_datos(ultimo_estado)
-                    st.success("Se ha deshecho la última acción correctamente.")
-                    st.rerun()
-            
             filtro = st.selectbox("Filtrar por estado:", ["Todos", "En Espera", "Autorizados", "En Zona Franca", "Finalizados"], key="filtro_op")
             def filtrar(lst):
                 if filtro == "Todos": return lst
@@ -917,15 +829,18 @@ if modo_qp == "operador":
 
             lista = filtrar(turnos_g)
             if lista:
-                opciones_dict = {f"{t['id_turno']} ({fecha_legible(t.get('fecha_hora',''))}) — {t['placa']} — {t['estado']}": t.get("uid", "") for t in lista}
-                sel = st.selectbox("Selecciona un turno para gestionar:", list(opciones_dict.keys()), key="sel_op")
-                id_sel = opciones_dict[sel]
+                opciones = [f"{t['id_turno']} — {t['placa']} — {t['estado']}" for t in lista]
+                sel = st.selectbox("Selecciona un turno para gestionar:", opciones, key="sel_op")
+                id_sel = sel.split(" — ")[0]
                 turno_sel = buscar_turno(turnos_g, id_sel)
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
-                        st.markdown("##### Editar Datos del Conductor")
-                        nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
+                        st.markdown(f"**Conductor:** {turno_sel.get('nombre','')} | C.C. {turno_sel.get('cedula','')} | Tel: {turno_sel.get('telefono','—')}")
+                        st.markdown(f"**Registrado:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
+
+                        # Campos editables con validación de duplicados
+                        nuevo_tiquet = st.text_input("Número de Ficho", value=turno_sel.get('id_turno', '')).upper().strip()
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
                         nuevo_nombre = st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', '')).title().strip()
                         nueva_cedula = st.text_input("Cédula", value=turno_sel.get('cedula', '')).strip()
@@ -935,77 +850,80 @@ if modo_qp == "operador":
                         bodega_actual = turno_sel.get("bodega", "")
                         idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
                         nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
-                        
-                        st.text_area("Observaciones del Conductor (Solo lectura)", value=turno_sel.get('observaciones_conductor', ''), disabled=True, help="Este campo solo puede ser modificado por el conductor al momento de registrarse.")
-                        st.caption(f"**Registrado originalmente:** {fecha_legible(turno_sel.get('fecha_hora',''))}")
 
                         st.markdown("---")
-                        st.markdown("##### Estado y Gestión")
                         nuevo_tipo = st.selectbox("Tipo de movimiento", ["Ingresar", "Salir"], index=0 if turno_sel.get("tipo_movimiento") == "Ingresar" else 1)
                         estados_posibles = ["En Espera", "AUTORIZADO PARA INGRESAR", "AUTORIZADO PARA SALIR"]
                         estado_actual = turno_sel.get("estado", "En Espera")
                         idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
                         nuevo_estado = st.selectbox("Estado", estados_posibles, index=idx_estado)
-                        mensaje = st.text_input("Mensaje para el conductor (ej: Muelle 3)", value=turno_sel.get("mensaje_admin", ""))
+                        
+                        # 🔧 CAMPO DE MENSAJE BLOQUEADO
+                        mensaje = st.text_input("Mensaje para el conductor", value=turno_sel.get("mensaje_admin", ""), disabled=True, help="Este mensaje fue generado automáticamente y no puede ser editado.")
+                        
                         mostrar = st.checkbox("Mostrar en pantalla pública", value=bool(turno_sel.get("mostrar_en_pantalla", False)))
-
+                        
                         st.markdown("---")
                         eliminar = st.checkbox("Eliminar este turno permanentemente")
-                        pass_confirm = ""
-                        if eliminar:
-                            pass_confirm = st.text_input("Ingrese contraseña de Operador para confirmar eliminación", type="password")
 
                         if st.form_submit_button("Guardar Cambios", use_container_width=True):
                             if eliminar:
-                                if pass_confirm != CONFIG.get("contrasena_admin"):
-                                    st.error("❌ Contraseña incorrecta. No se puede eliminar el turno.")
-                                else:
-                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
-                                    turnos_g = [t for t in turnos_g if t.get("uid") != id_sel]
-                                    guardar_datos(turnos_g)
-                                    st.success(f"Turno {turno_sel['id_turno']} eliminado.")
-                                    st.rerun()
+                                turnos_g = [t for t in turnos_g if t["id_turno"] != id_sel]
+                                guardar_datos(turnos_g)
+                                st.success(f"Turno {id_sel} eliminado.")
+                                st.rerun()
                             else:
+                                # Validar duplicados al editar
                                 nueva_placa_clean = nueva_placa.replace(" ", "").upper()
-                                placa_duplicada = any(t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean and t.get("uid") != id_sel and "FINALIZADO" not in (t.get("estado") or "").upper() for t in turnos_g)
-                                ultimo_corte = obtener_ultimo_corte()
-                                corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
-                                tiquet_duplicado = any(t.get("id_turno") == nuevo_tiquet and t.get("fecha_hora", "") >= corte_str and t.get("uid") != id_sel for t in turnos_g)
+                                placa_duplicada = any(
+                                    t.get("placa", "").replace(" ", "").upper() == nueva_placa_clean 
+                                    and t.get("id_turno") != id_sel 
+                                    and "FINALIZADO" not in (t.get("estado") or "").upper()
+                                    for t in turnos_g
+                                )
+                                tiquet_duplicado = any(
+                                    t.get("id_turno") == nuevo_tiquet 
+                                    and t.get("id_turno") != id_sel 
+                                    for t in turnos_g
+                                )
 
                                 if placa_duplicada:
                                     st.error(f"❌ La placa {nueva_placa} ya está registrada en otro turno activo.")
                                 elif tiquet_duplicado:
-                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso en la jornada actual. Por favor asigne uno diferente.")
+                                    st.error(f"❌ El Ficho {nuevo_tiquet} ya está en uso. Por favor asigne uno diferente.")
                                 elif not nuevo_tiquet:
                                     st.error("❌ El número de Ficho no puede estar vacío.")
                                 else:
-                                    st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     for t in turnos_g:
-                                        if t.get("uid") == id_sel:
+                                        if t["id_turno"] == id_sel:
                                             antes = (t.get("estado") or "").upper()
+                                            
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
                                             t["nombre"] = nuevo_nombre
                                             t["cedula"] = nueva_cedula
                                             t["telefono"] = nuevo_telefono
                                             t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
+                                            
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
-                                            t["mensaje_admin"] = mensaje
+                                            # Nota: El mensaje no se actualiza porque está bloqueado
                                             t["mostrar_en_pantalla"] = mostrar
+                                            
                                             if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
                                                 t["fecha_autorizacion"] = ahora_str()
                                             break
                                     guardar_datos(turnos_g)
-                                    st.success("Cambios guardados exitosamente.")
+                                    st.success("Cambios guardados.")
                                     st.rerun()
+
+                # 🔧 SE ELIMINÓ LA TABLA RÁPIDA DE VISIBILIDAD (st.data_editor) DE AQUÍ
             else:
                 st.info("No hay turnos que coincidan con el filtro.")
 
     # --- PANTALLA ---
     with tab_pantalla:
         st.markdown("#### Vista previa de Pantalla Pública")
-        st.caption(f"Los vehículos autorizados se muestran por {CONFIG.get('tiempo_en_pantalla_min', 30)} minutos y luego se ocultan automáticamente.")
         turnos_p = cargar_datos()
         def visible_p(t):
             if not t.get("mostrar_en_pantalla"): return False
@@ -1027,6 +945,7 @@ if modo_qp == "operador":
                     <div class="card-ingreso">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa">{t['placa']}</div>
+                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or '—'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1039,6 +958,7 @@ if modo_qp == "operador":
                     <div class="card-salida">
                         <div class="card-ficho">Ficho {t['id_turno']}</div>
                         <div class="card-placa-sal">{t['placa']}</div>
+                        <div class="card-detalle"><b>Destino:</b> {t['bodega']}</div>
                         <div class="card-aviso">{t.get('mensaje_admin','') or '—'}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1046,12 +966,8 @@ if modo_qp == "operador":
     # --- QR ---
     with tab_qr:
         st.markdown("#### Centro de Códigos QR")
-        st.caption("Configura la URL base de tu aplicación y descarga los códigos QR que corresponden a cada portal.")
-        st.markdown("##### Paso 1 · Configura la URL base")
-        base_url_actual = CONFIG.get("url_base", "").strip().rstrip("/")
-
         with st.form("form_url_base_qr"):
-            base_url_in = st.text_input("URL base de la aplicación", value=base_url_actual, placeholder="https://tu-app.streamlit.app")
+            base_url_in = st.text_input("URL base de la aplicación", value=CONFIG.get("url_base", ""), placeholder="https://tu-app.streamlit.app")
             if st.form_submit_button("Guardar URL base", use_container_width=True):
                 nuevo_cfg = cargar_config()
                 nuevo_cfg["url_base"] = base_url_in.strip().rstrip("/")
@@ -1060,16 +976,13 @@ if modo_qp == "operador":
                 st.rerun()
 
         base_url = CONFIG.get("url_base", "").strip().rstrip("/")
-        st.markdown("---")
-
-        if not base_url: st.warning("Configura primero la URL base (paso 1).")
-        elif not HAS_QR: st.error("La librería **qrcode[pil]** no está instalada. Agrégala a `requirements.txt`.")
+        if not base_url: st.warning("Configura primero la URL base.")
+        elif not HAS_QR: st.error("La librería **qrcode[pil]** no está instalada.")
         else:
-            st.markdown("##### Paso 2 · Descarga e imprime los códigos QR")
             portales = [
-                {"clave": "conductor", "titulo": "CONDUCTOR", "subtitulo": "Punto de enturnamiento", "descripcion": "El conductor escanea este QR y accede al formulario de registro.", "color_hex": "#1B4D3E", "archivo_png": "qr_conductor_zfc.png"},
-                {"clave": "vigilante", "titulo": "VIGILANTE", "subtitulo": "Punto de control / garita", "descripcion": "El vigilante escanea este QR y accede a su portal de check-in/out.", "color_hex": "#0D4A56", "archivo_png": "qr_vigilante_zfc.png"},
-                {"clave": "pantalla", "titulo": "PANTALLA TV", "subtitulo": "Televisor informativo", "descripcion": "Abre este enlace en las pantallas para mostrar vehículos autorizados.", "color_hex": "#12402A", "archivo_png": "qr_pantalla_zfc.png"},
+                {"clave": "conductor", "titulo": "CONDUCTOR", "subtitulo": "Punto de enturnamiento", "descripcion": "El conductor escanea este QR y accede al formulario.", "color_hex": "#1B4D3E", "archivo_png": "qr_conductor_zfc.png"},
+                {"clave": "vigilante", "titulo": "VIGILANTE", "subtitulo": "Punto de control / garita", "descripcion": "El vigilante escanea este QR y accede a su portal.", "color_hex": "#0D4A56", "archivo_png": "qr_vigilante_zfc.png"},
+                {"clave": "pantalla", "titulo": "PANTALLA TV", "subtitulo": "Televisor informativo", "descripcion": "Abre este enlace en las pantallas.", "color_hex": "#12402A", "archivo_png": "qr_pantalla_zfc.png"},
             ]
             cols_qr = st.columns(3)
             for idx, portal in enumerate(portales):
@@ -1084,7 +997,6 @@ if modo_qp == "operador":
                     """, unsafe_allow_html=True)
                     if qr_bytes:
                         st.image(qr_bytes, use_container_width=True)
-                        st.markdown("<div style='text-align:center; margin-top:-10px; margin-bottom:10px;'><b>O ingresa a este enlace:</b></div>", unsafe_allow_html=True)
                         st.code(url_portal, language=None)
                         st.caption(portal["descripcion"])
                         st.download_button(f"Descargar QR · {portal['titulo'].title()}", data=qr_bytes, file_name=portal["archivo_png"], mime="image/png", use_container_width=True, key=f"dl_qr_{portal['clave']}")
@@ -1095,38 +1007,26 @@ if modo_qp == "operador":
     with tab_config:
         st.markdown("#### Configuración del Sistema")
         with st.form("form_cfg"):
-            st.markdown("**Tiempo en pantalla**")
-            tiempo = st.number_input("Minutos que un vehículo permanece visible tras su autorización", min_value=1, max_value=240, value=int(CONFIG.get("tiempo_en_pantalla_min", 30)))
-            st.markdown("---")
-            st.markdown("**Rango de geolocalización**")
-            radio_val = st.number_input("Radio máximo permitido en kilómetros desde la Zona Franca", min_value=0.5, max_value=200.0, value=float(CONFIG.get("radio_geofence_km", 3.0)), step=0.5)
+            tiempo = st.number_input("Minutos que un vehículo permanece visible", min_value=1, max_value=240, value=int(CONFIG.get("tiempo_en_pantalla_min", 30)))
+            radio_val = st.number_input("Radio máximo permitido (km)", min_value=0.5, max_value=200.0, value=float(CONFIG.get("radio_geofence_km", 3.0)), step=0.5)
             c_geo1, c_geo2 = st.columns(2)
             with c_geo1: zfc_lat_in = st.number_input("Latitud Zona Franca", value=float(CONFIG.get("zfc_lat", 7.90750)), format="%.5f")
             with c_geo2: zfc_lon_in = st.number_input("Longitud Zona Franca", value=float(CONFIG.get("zfc_lon", -72.50472)), format="%.5f")
-            st.caption("Coordenadas de la Zona Franca de Cúcuta. Verifica en Google Maps si es necesario.")
-
-            st.markdown("---")
-            st.markdown("**URL base de la aplicación**")
+            
             url_base_in = st.text_input("URL base (ej: https://tu-app.streamlit.app)", value=CONFIG.get("url_base", ""))
-
-            st.markdown("---")
-            st.markdown("**Credenciales Operador**")
             u_admin = st.text_input("Usuario Admin", value=CONFIG.get("usuario_admin", ""))
             p_admin = st.text_input("Contraseña Admin", value=CONFIG.get("contrasena_admin", ""), type="password")
-
-            st.markdown("---")
-            st.markdown("**Credenciales Vigilante**")
             u_vig = st.text_input("Usuario Vigilante", value=CONFIG.get("usuario_vigilante", ""))
             p_vig = st.text_input("Contraseña Vigilante", value=CONFIG.get("contrasena_vigilante", ""), type="password")
-
-            st.markdown("---")
-            st.markdown("**Bodegas disponibles** (una por línea)")
-            bodegas_txt = st.text_area("Lista de bodegas", value="\n".join(CONFIG.get("bodegas", [])), height=250)
+            bodegas_txt = st.text_area("Bodegas (una por línea)", value="\n".join(CONFIG.get("bodegas", [])), height=150)
 
             if st.form_submit_button("Guardar Configuración", use_container_width=True):
                 cfg = {
-                    "config_version": DEFAULT_CONFIG["config_version"], "tiempo_en_pantalla_min": int(tiempo), "radio_geofence_km": float(radio_val), "zfc_lat": float(zfc_lat_in), "zfc_lon": float(zfc_lon_in),
-                    "usuario_admin": u_admin, "contrasena_admin": p_admin, "usuario_vigilante": u_vig, "contrasena_vigilante": p_vig, "url_base": url_base_in.strip(), "bodegas": [l.strip() for l in bodegas_txt.split("\n") if l.strip()],
+                    "tiempo_en_pantalla_min": int(tiempo), "radio_geofence_km": float(radio_val),
+                    "zfc_lat": float(zfc_lat_in), "zfc_lon": float(zfc_lon_in),
+                    "usuario_admin": u_admin, "contrasena_admin": p_admin,
+                    "usuario_vigilante": u_vig, "contrasena_vigilante": p_vig,
+                    "url_base": url_base_in.strip(), "bodegas": [l.strip() for l in bodegas_txt.split("\n") if l.strip()],
                 }
                 guardar_config(cfg)
                 st.success("Configuración guardada.")
@@ -1134,31 +1034,20 @@ if modo_qp == "operador":
 
         st.markdown("---")
         st.markdown("#### Limpieza de Jornada")
-        st.caption("Opción para reiniciar la jornada laboral actual y dejar todo limpio para nuevos registros.")
         turnos_actuales = cargar_datos()
         total_registros = len(turnos_actuales)
         c_met1, c_met2 = st.columns(2)
-        c_met1.metric("Total registros en historial", total_registros)
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("##### Limpiar turnos manualmente")
-        st.caption("Esta acción borrará TODOS los turnos del historial. Si deseas conservar la información, descarga el respaldo antes de hacer clic.")
-        if st.button("Limpiar todo el historial", use_container_width=True, key="clean_todos_hoy"):
-            st.session_state.historial_turnos.append(copy.deepcopy(turnos_actuales))
+        c_met1.metric("Total registros", total_registros)
+        
+        if st.button("Limpiar", use_container_width=True, key="clean_todos_hoy"):
             guardar_datos([])
-            st.success("Se eliminaron todos los turnos. Sistema limpio.")
+            st.success("Se eliminaron todos los turnos.")
             st.rerun()
 
-        st.markdown("---")
-        st.markdown("#### Exportar antes de limpiar")
-        st.caption("Recomendación: descarga el historial en Excel antes de limpiar, para conservar evidencia de la jornada.")
         if total_registros > 0:
             df_clean = pd.DataFrame(turnos_actuales)
-            df_clean["fecha_hora"] = df_clean["fecha_hora"].apply(fecha_legible)
-            df_clean["fecha_autorizacion"] = df_clean["fecha_autorizacion"].apply(fecha_legible)
-            df_clean["fecha_ingreso_zf"] = df_clean["fecha_ingreso_zf"].apply(fecha_legible)
-            df_clean["fecha_salida_zf"] = df_clean["fecha_salida_zf"].apply(fecha_legible)
-            csv_clean = generar_excel(df_clean)
-            st.download_button("Descargar respaldo del historial completo (Excel)", data=csv_clean, file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="dl_respaldo")
+            csv_clean = df_clean.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("Descargar respaldo", data=csv_clean, file_name=f"respaldo_turnos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True, key="dl_respaldo")
 
     # --- HISTORIAL ---
     with tab_historial:
@@ -1173,22 +1062,25 @@ if modo_qp == "operador":
             m2.metric("En Espera", len(df[df["estado"].astype(str).str.contains("Espera", case=False, na=False)]))
             m3.metric("Autorizados", len(df[df["estado"].astype(str).str.contains("AUTORIZADO", case=False, na=False)]))
             m4.metric("Finalizados", len(df[df["estado"].astype(str).str.contains("FINALIZADO", case=False, na=False)]))
+            
             st.markdown("---")
             df["fecha_hora"] = df["fecha_hora"].apply(fecha_legible)
             df["fecha_autorizacion"] = df["fecha_autorizacion"].apply(fecha_legible)
             df["fecha_ingreso_zf"] = df["fecha_ingreso_zf"].apply(fecha_legible)
             df["fecha_salida_zf"] = df["fecha_salida_zf"].apply(fecha_legible)
-            cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_conductor", "observaciones_vigilante"]
+            
+            cols = ["id_turno", "placa", "nombre", "cedula", "telefono", "fecha_hora", "bodega", "tipo_movimiento", "estado", "mensaje_admin", "fecha_autorizacion", "fecha_ingreso_zf", "fecha_salida_zf", "observaciones_vigilante"]
             cols_disp = [c for c in cols if c in df.columns]
             df_v = df[cols_disp].rename(columns={
                 "id_turno": "Turno", "placa": "Placa", "nombre": "Conductor", "cedula": "Cédula", "telefono": "Teléfono",
                 "fecha_hora": "Fecha Registro", "bodega": "Bodega", "tipo_movimiento": "Movimiento", "estado": "Estado",
                 "mensaje_admin": "Mensaje", "fecha_autorizacion": "Autorizado Operador", "fecha_ingreso_zf": "Ingreso Vigilante",
-                "fecha_salida_zf": "Salida Vigilante", "observaciones_conductor": "Obs. Conductor", "observaciones_vigilante": "Obs. Vigilante",
+                "fecha_salida_zf": "Salida Vigilante", "observaciones_vigilante": "Observaciones",
             })
             st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
-            excel_data = generar_excel(df_v)
-            st.download_button("Descargar Excel", data=excel_data, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            
+            csv = df_v.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("Descargar CSV", data=csv, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv", use_container_width=True)
 
     st.stop()
 
