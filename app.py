@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 Sistema de Gestión de Turnos y Control de Accesos
@@ -26,8 +25,8 @@ except ImportError:
     HAS_QR = False
 
 try:
-    # 🔧 Librería para GPS y memoria local
-    from streamlit_js_eval import get_geolocation, get_local_storage, set_local_storage, delete_local_storage
+    # 🔧 Nueva librería de geolocalización nativa (Mucho más estable en la nube)
+    from streamlit_geolocation import streamlit_geolocation
     HAS_GEO = True
 except ImportError:
     HAS_GEO = False
@@ -616,17 +615,6 @@ try:
         turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == val_t or t.get("id_turno") == val_t), None)
         if turno_encontrado:
             st.session_state.mi_turno_id = turno_encontrado.get("uid")
-            
-    if st.session_state.mi_turno_id is None and HAS_GEO and modo_qp == "conductor":
-        uid_local = get_local_storage("mi_turno_uid")
-        if uid_local:
-            turno_encontrado = next((t for t in cargar_datos() if t.get("uid") == uid_local), None)
-            if turno_encontrado:
-                st.session_state.mi_turno_id = turno_encontrado.get("uid")
-                try:
-                    st.query_params["t"] = turno_encontrado.get("uid")
-                except Exception:
-                    pass
         
     ahora_ts = time.time()
     
@@ -829,11 +817,6 @@ if modo_qp == "conductor":
             with col_b:
                 if st.button("Registrar otro vehículo", use_container_width=True):
                     st.session_state.mi_turno_id = None
-                    if HAS_GEO:
-                        try:
-                            delete_local_storage("mi_turno_uid")
-                        except Exception:
-                            pass
                     try:
                         st.query_params.clear()
                         st.query_params["modo"] = "conductor"
@@ -843,193 +826,131 @@ if modo_qp == "conductor":
 
         else:
             if not HAS_GEO:
-                st.error("Falta la librería **streamlit-js-eval**. Agrégala a `requirements.txt` y redeploya la aplicación.")
+                st.error("Falta la librería **streamlit-geolocation**. Agrégala a `requirements.txt` y redeploya la aplicación.")
                 st.stop()
 
-            if "geo_data" not in st.session_state:
-                st.session_state.geo_data = None
-            if "geo_error" not in st.session_state:
-                st.session_state.geo_error = None
-            if "geo_retry" not in st.session_state:
-                st.session_state.geo_retry = 0
+            st.markdown("##### Verificación de ubicación")
+            st.info("📍 Por seguridad, haz clic en el botón de abajo para obtener tu ubicación GPS actual.")
+            
+            # Componente nativo de geolocalización
+            loc = streamlit_geolocation()
 
-            if st.session_state.geo_data is None and st.session_state.geo_error is None:
-                st.info("📍 Verificando tu ubicación GPS... Por favor permite el acceso cuando el navegador lo solicite.")
-                loc = get_geolocation(component_key=f"geo_{st.session_state.geo_retry}")
-                if loc is not None:
-                    try:
-                        if isinstance(loc, dict) and "coords" in loc:
-                            st.session_state.geo_data = loc["coords"]
-                        else:
-                            st.session_state.geo_error = "No se pudo obtener la ubicación."
-                    except Exception:
-                        st.session_state.geo_error = "Error procesando la ubicación."
-                    st.rerun()
-                else:
-                    st.caption("Si ya otorgaste permisos, espera unos segundos. Si rechazaste, presiona el botón de abajo.")
-                    if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_1"):
-                        st.session_state.geo_retry += 1
-                        st.rerun()
+            if loc and loc.get('latitude') is not None and loc.get('longitude') is not None:
+                user_lat = loc['latitude']
+                user_lon = loc['longitude']
+                
+                zfc_lat = float(CONFIG.get("zfc_lat", 7.90750))
+                zfc_lon = float(CONFIG.get("zfc_lon", -72.50472))
+                radio_max = float(CONFIG.get("radio_geofence_km", 2.0))
+
+                distancia = calcular_distancia_km(user_lat, user_lon, zfc_lat, zfc_lon)
+
+                if distancia > radio_max:
+                    st.error(
+                        f"### ⚠️ Te encuentras lejos de la ubicación\n\n"
+                        f"**Debes estar en la Zona Franca de Cúcuta para poder enturnarte.**\n\n"
+                        f"Distancia actual: **{distancia:.1f} km** de las instalaciones.\n\n"
+                        f"Radio permitido: **{radio_max:.1f} km**.\n\n"
+                        f"Acércate a la Zona Franca de Cúcuta y vuelve a presionar el botón de ubicación."
+                    )
                     st.stop()
+                else:
+                    st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
+                    st.markdown("Completa tus datos para asignarte un turno.")
+                    st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
 
-            if st.session_state.geo_error:
-                st.error(
-                    f"⚠️ **No pudimos obtener tu ubicación.**\n\n"
-                    f"Detalle: {st.session_state.geo_error}\n\n"
-                    f"**¿Cómo habilitar el GPS?**\n"
-                    f"1. Toca el ícono del candado junto a la URL\n"
-                    f"2. Habilita 'Ubicación' o 'Location'\n"
-                    f"3. Recarga la página y presiona 'Reintentar'"
-                )
-                if st.button("Reintentar ubicación", use_container_width=True, key="geo_retry_2"):
-                    st.session_state.geo_error = None
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            try:
-                user_lat = float(st.session_state.geo_data.get("latitude"))
-                user_lon = float(st.session_state.geo_data.get("longitude"))
-            except (TypeError, ValueError):
-                st.error("Los datos de ubicación recibidos no son válidos. Intenta nuevamente.")
-                if st.button("Reintentar", use_container_width=True, key="geo_retry_3"):
-                    st.session_state.geo_data = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            zfc_lat = float(CONFIG.get("zfc_lat", 7.90750))
-            zfc_lon = float(CONFIG.get("zfc_lon", -72.50472))
-            radio_max = float(CONFIG.get("radio_geofence_km", 2.0))
-
-            distancia = calcular_distancia_km(user_lat, user_lon, zfc_lat, zfc_lon)
-
-            if distancia > radio_max:
-                st.error(
-                    f"### ⚠️ Te encuentras lejos de la ubicación\n\n"
-                    f"**Debes estar en la Zona Franca de Cúcuta para poder enturnarte.**\n\n"
-                    f"Distancia actual: **{distancia:.1f} km** de las instalaciones.\n\n"
-                    f"Radio permitido: **{radio_max:.1f} km**.\n\n"
-                    f"Acércate a la Zona Franca de Cúcuta y presiona el botón para verificar de nuevo."
-                )
-                if st.button("Verificar ubicación de nuevo", use_container_width=True, key="geo_recheck"):
-                    st.session_state.geo_data = None
-                    st.session_state.geo_error = None
-                    st.session_state.geo_retry += 1
-                    st.rerun()
-                st.stop()
-
-            st.success(f"📍 Ubicación verificada. Estás a {distancia:.1f} km de la Zona Franca.")
-            st.markdown("Completa tus datos para asignarte un turno.")
-            st.caption("Los campos con (*) son obligatorios. La bodega es opcional.")
-
-            with st.form("form_conductor", clear_on_submit=False):
-                placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
-                nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
-                cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
-                telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
-                
-                bodega = st.selectbox(
-                    "Bodega de Destino (Opcional)",
-                    ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
-                )
-                
-                observaciones_conductor = st.text_area(
-                    "Observaciones (Opcional)", 
-                    placeholder="Si tienes alguna nota sobre tu vehículo o carga, escríbela aquí..."
-                )
-                
-                submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
-
-                if submitted:
-                    errores = []
-                    if not placa: errores.append("La placa del vehículo es obligatoria.")
-                    if not nombre: errores.append("El nombre del conductor es obligatorio.")
-                    if not cedula: errores.append("El número de cédula es obligatorio.")
-                    if not telefono: errores.append("El teléfono de contacto es obligatorio.")
-                    
-                    if cedula and not cedula.isdigit(): errores.append("La cédula debe contener solo números.")
-                    if telefono and not telefono.isdigit(): errores.append("El teléfono debe contener solo números.")
-                    if telefono and len(telefono) < 7: errores.append("El teléfono debe tener al menos 7 dígitos.")
-                    if placa and len(placa) < 5: errores.append("La placa debe tener al menos 5 caracteres.")
-
-                    if errores:
-                        st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
-                    else:
-                        actuales = cargar_datos()
-                        placa_clean = placa.replace(" ", "").upper()
+                    with st.form("form_conductor", clear_on_submit=False):
+                        placa = st.text_input("Placa del Vehículo *", placeholder="Ej: ABC123").upper().strip()
+                        nombre = st.text_input("Nombre Completo del Conductor *", placeholder="Ej: Juan Pérez").title().strip()
+                        cedula = st.text_input("Número de Cédula *", placeholder="Ej: 1234567890").strip()
+                        telefono = st.text_input("Teléfono de Contacto *", placeholder="Ej: 3001234567").strip()
                         
-                        activo = next(
-                            (t for t in actuales
-                             if t.get("placa", "").replace(" ", "").upper() == placa_clean 
-                             and "FINALIZADO" not in (t.get("estado") or "").upper()),
-                            None,
+                        bodega = st.selectbox(
+                            "Bodega de Destino (Opcional)",
+                            ["Seleccione una bodega..."] + CONFIG.get("bodegas", []),
                         )
-                        if activo:
-                            st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
-                            st.session_state.mi_turno_id = activo["uid"]
-                            
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", activo["uid"])
-                                except Exception:
-                                    pass
-                                    
-                            try:
-                                st.query_params["t"] = activo["uid"]
-                            except Exception:
-                                pass
-                            st.rerun()
-                        else:
-                            st.session_state.historial_turnos.append(copy.deepcopy(actuales))
-                            
-                            ultimo_corte = obtener_ultimo_corte()
-                            corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
-                            
-                            turnos_jornada = [t for t in actuales if t.get("fecha_hora", "") >= corte_str]
-                            
-                            ids_existentes = [int(t["id_turno"].split("-")[1]) for t in turnos_jornada if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
-                            nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
-                            turno_str = f"T-{nuevo_num:03d}"
+                        
+                        observaciones_conductor = st.text_area(
+                            "Observaciones (Opcional)", 
+                            placeholder="Si tienes alguna nota sobre tu vehículo o carga, escríbela aquí..."
+                        )
+                        
+                        submitted = st.form_submit_button("Obtener Turno", use_container_width=True)
 
-                            nuevo = {
-                                "uid": str(uuid.uuid4()),
-                                "id_turno": turno_str,
-                                "placa": placa_clean,
-                                "nombre": nombre,
-                                "cedula": cedula,
-                                "telefono": telefono,
-                                "bodega": bodega if bodega != "Seleccione una bodega..." else "",
-                                "tipo_movimiento": "Ingresar",
-                                "estado": "En Espera",
-                                "fecha_hora": ahora_str(),
-                                "mensaje_admin": "En espera de autorización",
-                                "mostrar_en_pantalla": False,
-                                "fecha_autorizacion": None,
-                                "fecha_ingreso_zf": None,
-                                "fecha_salida_zf": None,
-                                "checklist_ingreso": {},
-                                "checklist_salida": {},
-                                "observaciones_vigilante": "",
-                                "observaciones_conductor": observaciones_conductor,
-                            }
-                            actuales.append(nuevo)
-                            guardar_datos(actuales)
+                        if submitted:
+                            errores = []
+                            if not placa: errores.append("La placa del vehículo es obligatoria.")
+                            if not nombre: errores.append("El nombre del conductor es obligatorio.")
+                            if not cedula: errores.append("El número de cédula es obligatorio.")
+                            if not telefono: errores.append("El teléfono de contacto es obligatorio.")
                             
-                            st.session_state.mi_turno_id = nuevo["uid"]
-                            
-                            if HAS_GEO:
-                                try:
-                                    set_local_storage("mi_turno_uid", nuevo["uid"])
-                                except Exception:
-                                    pass
+                            if cedula and not cedula.isdigit(): errores.append("La cédula debe contener solo números.")
+                            if telefono and not telefono.isdigit(): errores.append("El teléfono debe contener solo números.")
+                            if telefono and len(telefono) < 7: errores.append("El teléfono debe tener al menos 7 dígitos.")
+                            if placa and len(placa) < 5: errores.append("La placa debe tener al menos 5 caracteres.")
+
+                            if errores:
+                                st.error("⚠️ Corrige los siguientes errores:\n\n" + "\n".join(f"• {e}" for e in errores))
+                            else:
+                                actuales = cargar_datos()
+                                placa_clean = placa.replace(" ", "").upper()
+                                
+                                activo = next(
+                                    (t for t in actuales
+                                     if t.get("placa", "").replace(" ", "").upper() == placa_clean 
+                                     and "FINALIZADO" not in (t.get("estado") or "").upper()),
+                                    None,
+                                )
+                                if activo:
+                                    st.warning(f"La placa {placa} ya tiene un turno activo: {activo['id_turno']} del {fecha_legible(activo['fecha_hora'])}")
+                                    st.session_state.mi_turno_id = activo["uid"]
+                                    try:
+                                        st.query_params["t"] = activo["uid"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
+                                else:
+                                    st.session_state.historial_turnos.append(copy.deepcopy(actuales))
                                     
-                            try:
-                                st.query_params["t"] = nuevo["uid"]
-                            except Exception:
-                                pass
-                            st.rerun()
+                                    ultimo_corte = obtener_ultimo_corte()
+                                    corte_str = ultimo_corte.strftime("%Y-%m-%d %H:%M:%S")
+                                    
+                                    turnos_jornada = [t for t in actuales if t.get("fecha_hora", "") >= corte_str]
+                                    
+                                    ids_existentes = [int(t["id_turno"].split("-")[1]) for t in turnos_jornada if t.get("id_turno", "").startswith("T-") and t["id_turno"].split("-")[1].isdigit()]
+                                    nuevo_num = max(ids_existentes) + 1 if ids_existentes else 1
+                                    turno_str = f"T-{nuevo_num:03d}"
+
+                                    nuevo = {
+                                        "uid": str(uuid.uuid4()),
+                                        "id_turno": turno_str,
+                                        "placa": placa_clean,
+                                        "nombre": nombre,
+                                        "cedula": cedula,
+                                        "telefono": telefono,
+                                        "bodega": bodega if bodega != "Seleccione una bodega..." else "",
+                                        "tipo_movimiento": "Ingresar",
+                                        "estado": "En Espera",
+                                        "fecha_hora": ahora_str(),
+                                        "mensaje_admin": "En espera de autorización",
+                                        "mostrar_en_pantalla": False,
+                                        "fecha_autorizacion": None,
+                                        "fecha_ingreso_zf": None,
+                                        "fecha_salida_zf": None,
+                                        "checklist_ingreso": {},
+                                        "checklist_salida": {},
+                                        "observaciones_vigilante": "",
+                                        "observaciones_conductor": observaciones_conductor,
+                                    }
+                                    actuales.append(nuevo)
+                                    guardar_datos(actuales)
+                                    
+                                    st.session_state.mi_turno_id = nuevo["uid"]
+                                    try:
+                                        st.query_params["t"] = nuevo["uid"]
+                                    except Exception:
+                                        pass
+                                    st.rerun()
 
         st.markdown("---")
         with st.expander("Visualizar estado de mi placa"):
@@ -1048,13 +969,6 @@ if modo_qp == "conductor":
                     )
                     if encontrado:
                         st.session_state.mi_turno_id = encontrado["uid"]
-                        
-                        if HAS_GEO:
-                            try:
-                                set_local_storage("mi_turno_uid", encontrado["uid"])
-                            except Exception:
-                                pass
-                                
                         try:
                             st.query_params["t"] = encontrado["uid"]
                         except Exception:
