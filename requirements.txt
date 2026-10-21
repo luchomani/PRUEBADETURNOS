@@ -2,4 +2,4 @@ streamlit
 pandas
 openpyxl
 qrcode[pil]
-streamlit-js-eval==0.1.7
+streamlit-js-eval
