@@ -1,3 +1,5 @@
-streamlit
+streamlit>=1.33.0
 pandas
 openpyxl
+qrcode[pil]
+streamlit-js-eval
