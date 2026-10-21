@@ -1,5 +1,0 @@
-streamlit
-pandas
-openpyxl
-qrcode[pil]
-streamlit-js-eval
