@@ -39,7 +39,7 @@ st.set_page_config(
 )
 
 # ==========================================================================
-# CSS CORPORATIVO Y TRUCO DE GEOLOCALIZACIÓN (COMPATIBLE IOS/ANDROID)
+# CSS CORPORATIVO
 # ==========================================================================
 st.markdown("""
 <style>
@@ -104,36 +104,6 @@ st.markdown("""
     div[data-testid="stMetricValue"] { color: var(--zfc-green-dark) !important; font-weight: 700; }
     div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
     div[data-testid="stAlert"] { border-radius: 8px; }
-    
-    /* TRUCO DE GEOLOCALIZACIÓN: SUPERPOSICIÓN CON MARGEN NEGATIVO (100% MÓVIL) */
-    .geo-btn-visual {
-        background-color: #1B4D3E;
-        color: white;
-        padding: 15px 30px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        font-weight: 700;
-        font-size: 16px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-        width: 100%;
-        height: 58px;
-        box-sizing: border-box;
-        margin-bottom: 15px;
-    }
-    
-    /* Hacemos el iframe real invisible y lo subimos exactamente sobre el botón visual */
-    iframe[title="streamlit_geolocation.streamlit_geolocation"] {
-        width: 100% !important;
-        height: 58px !important;
-        opacity: 0.01 !important;
-        position: relative !important;
-        margin-top: -73px !important; /* Compensa la altura + margen */
-        z-index: 9999 !important;
-        cursor: pointer !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -503,12 +473,9 @@ if modo_qp == "conductor":
             if not HAS_GEO:
                 st.error("⚠️ La librería de geolocalización no está instalada. Agrega 'streamlit-geolocation' a tu requirements.txt.")
             else:
-                st.info("Para continuar, haz clic en el botón de abajo y presiona **'Permitir'** cuando tu navegador te pregunte.")
+                st.info("Para continuar, haz clic en el botón de ubicación de abajo y presiona **'Permitir'** cuando tu navegador te pregunte.")
                 
-                # Botón visual (verde y bonito)
-                st.markdown('<div class="geo-btn-visual">📍 Validar mi Ubicación Ahora</div>', unsafe_allow_html=True)
-                
-                # Componente real (invisible, superpuesto con CSS)
+                # Renderizamos el componente nativo. (Quitamos todos los trucos de CSS).
                 loc = streamlit_geolocation()
                 
                 if loc and loc.get("latitude") is not None:
