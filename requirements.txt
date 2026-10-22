@@ -1,6 +1,5 @@
-streamlit>=1.37
+streamlit
 pandas
 qrcode[pil]
 openpyxl
-# Opcional: solo si quieres activar la geocerca desde Configuración
-# streamlit-geolocation
+streamlit-geolocation
