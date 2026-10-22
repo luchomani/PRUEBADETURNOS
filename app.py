@@ -130,8 +130,7 @@ DEFAULT_CONFIG = {
 }
 
 def calcular_distancia_km(lat1, lon1, lat2, lon2):
-    """Calcula la distancia entre dos coordenadas usando la fórmula de Haversine."""
-    R = 6371.0  # Radio de la Tierra en km
+    R = 6371.0
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
     dlon = lon2 - lon1
@@ -294,10 +293,10 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
-# --- COMPONENTE DE GEOLOCALIZACIÓN ESTÉTICO Y FUNCIONAL EN MÓVILES ---
+# --- COMPONENTE DE GEOLOCALIZACIÓN (SOLUCIÓN BLOQUEO MÓVIL) ---
 def custom_geo_button():
     html_code = """
-    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+    <div id="geo-container" style="display: flex; justify-content: center; margin-bottom: 10px;">
         <button id="geo-btn" onclick="getLocation()" style="
             background-color: #1B4D3E;
             color: white;
@@ -324,51 +323,60 @@ def custom_geo_button():
     </div>
     <script>
     function getLocation() {
+        const container = document.getElementById("geo-container");
         const btn = document.getElementById("geo-btn");
-        const originalHTML = btn.innerHTML;
         btn.innerHTML = "Obteniendo ubicación...";
         btn.disabled = true;
         btn.style.backgroundColor = "#6B7280";
 
-        const timeoutId = setTimeout(() => {
-            btn.innerHTML = "Esperando permisos del navegador...";
-        }, 5000);
-
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 function(position) {
-                    clearTimeout(timeoutId);
-                    btn.innerHTML = "Ubicación obtenida!";
                     try {
-                        const url = new URL(window.parent.location.href);
+                        const url = new URL(window.top.location.href);
                         url.searchParams.set("lat", position.coords.latitude);
                         url.searchParams.set("lon", position.coords.longitude);
                         
-                        // Uso de _top para forzar la redirección en navegadores móviles
-                        window.open(url.toString(), "_top");
+                        // Reemplazamos el botón por un enlace clickeable para evitar el bloqueo de popups
+                        container.innerHTML = `
+                            <a href="${url.toString()}" target="_top" style="
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                background-color: #1B4D3E;
+                                color: white;
+                                padding: 15px 30px;
+                                border-radius: 8px;
+                                text-decoration: none;
+                                font-weight: 700;
+                                font-size: 16px;
+                                width: 100%;
+                                box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+                            ">
+                                Ubicación validada. Haz clic aquí para continuar.
+                            </a>
+                        `;
                     } catch (e) {
-                        alert("Error de redirección. Por favor recarga la página manualmente.");
+                        btn.innerHTML = "Error de redirección";
                     }
                 },
                 function(error) {
-                    clearTimeout(timeoutId);
-                    btn.innerHTML = originalHTML;
+                    btn.innerHTML = "Validar mi Ubicación Ahora";
                     btn.disabled = false;
                     btn.style.backgroundColor = "#1B4D3E";
                     
                     let msg = "Error desconocido.";
-                    if (error.code === 1) msg = "Permiso denegado. Debes permitir el acceso a la ubicación en los ajustes de tu navegador.";
-                    if (error.code === 2) msg = "Ubicación no disponible. Verifica que tu GPS esté encendido.";
-                    if (error.code === 3) msg = "Tiempo de espera agotado. Intenta de nuevo.";
+                    if (error.code === 1) msg = "Permiso denegado. Habilita la ubicación en tu navegador.";
+                    if (error.code === 2) msg = "Ubicación no disponible. Enciende el GPS.";
+                    if (error.code === 3) msg = "Tiempo de espera agotado.";
                     
                     alert("Error de ubicación: " + msg);
                 },
                 { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         } else {
-            clearTimeout(timeoutId);
             alert("Geolocalización no soportada por este navegador.");
-            btn.innerHTML = originalHTML;
+            btn.innerHTML = "Validar mi Ubicación Ahora";
             btn.disabled = false;
             btn.style.backgroundColor = "#1B4D3E";
         }
@@ -476,7 +484,7 @@ if modo_qp == "pantalla":
     st.stop()
 
 # ==========================================================================
-# MODO: CONDUCTOR (CON GEOLOCALIZACIÓN PERSONALIZADA)
+# MODO: CONDUCTOR
 # ==========================================================================
 if modo_qp == "conductor":
     render_header_institucional()
