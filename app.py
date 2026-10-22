@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components # <-- NUEVA IMPORTACIÓN
+import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -33,7 +33,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# [EL CSS SE MANTIENE EXACTAMENTE IGUAL PARA NO ROMPER EL DISEÑO]
+# ==========================================================================
+# CSS CORPORATIVO
+# ==========================================================================
 st.markdown("""
 <style>
     :root {
@@ -292,11 +294,11 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
-# --- NUEVO COMPONENTE DE GEOLOCALIZACIÓN ESTÉTICO ---
+# --- COMPONENTE DE GEOLOCALIZACIÓN ESTÉTICO Y FUNCIONAL EN MÓVILES ---
 def custom_geo_button():
     html_code = """
     <div style="display: flex; justify-content: center; margin-bottom: 10px;">
-        <button onclick="getLocation()" style="
+        <button id="geo-btn" onclick="getLocation()" style="
             background-color: #1B4D3E;
             color: white;
             padding: 15px 30px;
@@ -322,30 +324,51 @@ def custom_geo_button():
     </div>
     <script>
     function getLocation() {
-        const btn = event.target.closest('button');
-        const originalText = btn.innerHTML;
+        const btn = document.getElementById("geo-btn");
+        const originalHTML = btn.innerHTML;
         btn.innerHTML = "Obteniendo ubicación...";
         btn.disabled = true;
         btn.style.backgroundColor = "#6B7280";
 
+        const timeoutId = setTimeout(() => {
+            btn.innerHTML = "Esperando permisos del navegador...";
+        }, 5000);
+
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 function(position) {
-                    const url = new URL(window.parent.location.href);
-                    url.searchParams.set("lat", position.coords.latitude);
-                    url.searchParams.set("lon", position.coords.longitude);
-                    window.parent.location.href = url.toString();
+                    clearTimeout(timeoutId);
+                    btn.innerHTML = "Ubicación obtenida!";
+                    try {
+                        const url = new URL(window.parent.location.href);
+                        url.searchParams.set("lat", position.coords.latitude);
+                        url.searchParams.set("lon", position.coords.longitude);
+                        
+                        // Uso de _top para forzar la redirección en navegadores móviles
+                        window.open(url.toString(), "_top");
+                    } catch (e) {
+                        alert("Error de redirección. Por favor recarga la página manualmente.");
+                    }
                 },
                 function(error) {
-                    btn.innerHTML = originalText;
+                    clearTimeout(timeoutId);
+                    btn.innerHTML = originalHTML;
                     btn.disabled = false;
                     btn.style.backgroundColor = "#1B4D3E";
-                    alert("Error: " + error.message + ". Por favor, permite el acceso a tu ubicación en el navegador.");
-                }
+                    
+                    let msg = "Error desconocido.";
+                    if (error.code === 1) msg = "Permiso denegado. Debes permitir el acceso a la ubicación en los ajustes de tu navegador.";
+                    if (error.code === 2) msg = "Ubicación no disponible. Verifica que tu GPS esté encendido.";
+                    if (error.code === 3) msg = "Tiempo de espera agotado. Intenta de nuevo.";
+                    
+                    alert("Error de ubicación: " + msg);
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         } else {
+            clearTimeout(timeoutId);
             alert("Geolocalización no soportada por este navegador.");
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalHTML;
             btn.disabled = false;
             btn.style.backgroundColor = "#1B4D3E";
         }
@@ -663,7 +686,6 @@ if modo_qp == "vigilante":
                         st.error("Credenciales incorrectas.")
         st.stop()
 
-    # Mostrar alerta de éxito si existe (SIN EMOJI)
     if "alerta_vig" in st.session_state:
         st.success(st.session_state.alerta_vig)
         del st.session_state.alerta_vig
@@ -689,7 +711,6 @@ if modo_qp == "vigilante":
         def panel_vigilante():
             turnos = cargar_datos()
             
-            # --- BUSCADOR DE PLACA (SIN EMOJI) ---
             buscar_placa_vig = st.text_input("Buscar vehículo por placa:", placeholder="Ingresa la placa para filtrar...").upper().strip()
             if buscar_placa_vig:
                 turnos = [t for t in turnos if buscar_placa_vig in t.get("placa", "").upper()]
@@ -812,7 +833,6 @@ if modo_qp == "operador":
                         st.error("Credenciales incorrectas.")
         st.stop()
 
-    # Mostrar alerta de éxito si existe (SIN EMOJI)
     if "alerta_op" in st.session_state:
         st.success(st.session_state.alerta_op)
         del st.session_state.alerta_op
@@ -847,7 +867,6 @@ if modo_qp == "operador":
                     st.session_state.alerta_op = "Se ha deshecho la última acción correctamente."
                     st.rerun()
             
-            # --- BUSCADOR DE PLACA (SIN EMOJI) ---
             buscar_placa_op = st.text_input("Buscar turno por placa:", placeholder="Ingresa la placa para filtrar...").upper().strip()
             if buscar_placa_op:
                 turnos_g = [t for t in turnos_g if buscar_placa_op in t.get("placa", "").upper()]
@@ -954,7 +973,6 @@ if modo_qp == "operador":
                 st.info("No hay turnos que coincidan con el filtro o búsqueda.")
 
     with tab_pantalla:
-        # ... [EL CÓDIGO DE PANTALLA SE MANTIENE IGUAL] ...
         st.markdown("#### Vista previa de Pantalla Pública")
         st.caption(f"Los vehículos autorizados se muestran por {CONFIG.get('tiempo_en_pantalla_min', 30)} minutos y luego se ocultan automáticamente.")
         turnos_p = cargar_datos()
@@ -986,7 +1004,6 @@ if modo_qp == "operador":
                     st.markdown(f'<div class="card-salida"><div class="card-ficho">Ficho {t["id_turno"]}</div><div class="card-placa-sal">{t["placa"]}</div><div class="card-aviso">{t.get("mensaje_admin","") or "—"}</div></div>', unsafe_allow_html=True)
 
     with tab_qr:
-        # ... [EL CÓDIGO DEL QR SE MANTIENE IGUAL] ...
         st.markdown("#### Centro de Códigos QR")
         base_url_actual = CONFIG.get("url_base", "").strip().rstrip("/")
         with st.form("form_url_base_qr"):
@@ -1024,7 +1041,6 @@ if modo_qp == "operador":
                         st.download_button(f"Descargar QR · {portal['titulo'].title()}", data=qr_bytes, file_name=portal["archivo_png"], mime="image/png", use_container_width=True, key=f"dl_qr_{portal['clave']}")
 
     with tab_config:
-        # ... [EL CÓDIGO DE CONFIGURACIÓN SE MANTIENE IGUAL] ...
         st.markdown("#### Configuración del Sistema")
         with st.form("form_cfg"):
             st.markdown("**Tiempo en pantalla**")
@@ -1070,7 +1086,6 @@ if modo_qp == "operador":
             st.rerun()
 
     with tab_historial:
-        # ... [EL CÓDIGO DEL HISTORIAL SE MANTIENE IGUAL] ...
         st.markdown("#### Historial General de Turnos")
         turnos_h = cargar_datos()
         if not turnos_h:
