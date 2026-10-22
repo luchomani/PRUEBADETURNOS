@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components # <-- NUEVA IMPORTACIÓN
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -21,12 +22,6 @@ try:
     HAS_QR = True
 except ImportError:
     HAS_QR = False
-
-try:
-    from streamlit_geolocation import streamlit_geolocation
-    HAS_GEO = True
-except ImportError:
-    HAS_GEO = False
 
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -297,6 +292,68 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
+# --- NUEVO COMPONENTE DE GEOLOCALIZACIÓN ESTÉTICO ---
+def custom_geo_button():
+    html_code = """
+    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+        <button onclick="getLocation()" style="
+            background-color: #1B4D3E;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            width: 100%;
+            justify-content: center;
+            transition: background-color 0.3s;
+        " onmouseover="this.style.backgroundColor='#2C6B56'" onmouseout="this.style.backgroundColor='#1B4D3E'">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            Validar mi Ubicación Ahora
+        </button>
+    </div>
+    <script>
+    function getLocation() {
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = "Obteniendo ubicación...";
+        btn.disabled = true;
+        btn.style.backgroundColor = "#6B7280";
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const url = new URL(window.parent.location.href);
+                    url.searchParams.set("lat", position.coords.latitude);
+                    url.searchParams.set("lon", position.coords.longitude);
+                    window.parent.location.href = url.toString();
+                },
+                function(error) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    btn.style.backgroundColor = "#1B4D3E";
+                    alert("Error: " + error.message + ". Por favor, permite el acceso a tu ubicación en el navegador.");
+                }
+            );
+        } else {
+            alert("Geolocalización no soportada por este navegador.");
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            btn.style.backgroundColor = "#1B4D3E";
+        }
+    }
+    </script>
+    """
+    components.html(html_code, height=80)
+
 # ==========================================================================
 # SESSION STATE Y PARÁMETROS
 # ==========================================================================
@@ -396,7 +453,7 @@ if modo_qp == "pantalla":
     st.stop()
 
 # ==========================================================================
-# MODO: CONDUCTOR (CON GEOLOCALIZACIÓN)
+# MODO: CONDUCTOR (CON GEOLOCALIZACIÓN PERSONALIZADA)
 # ==========================================================================
 if modo_qp == "conductor":
     render_header_institucional()
@@ -416,7 +473,7 @@ if modo_qp == "conductor":
             mi_turno = buscar_turno(turnos, st.session_state.mi_turno_id)
 
         if mi_turno and "FINALIZADO" not in (mi_turno.get("estado") or "").upper():
-            # [TICKET VIVO SE MANTIENE IGUAL]
+            # TICKET VIVO
             @st.fragment(run_every=5)
             def tiquet_vivo():
                 tv = cargar_datos()
@@ -467,21 +524,36 @@ if modo_qp == "conductor":
                     st.rerun()
         else:
             # --- VALIDACIÓN DE GEOLOCALIZACIÓN ---
-            st.markdown("#### Validación de Ubicación")
-            if not HAS_GEO:
-                st.warning("⚠️ El módulo de geolocalización no está instalado. Asegúrate de tener 'streamlit-geolocation' en tu requirements.txt.")
-            else:
-                loc = streamlit_geolocation()
-                if loc and loc.get('latitude') is not None and loc.get('longitude') is not None:
-                    dist = calcular_distancia_km(loc['latitude'], loc['longitude'], CONFIG["zfc_lat"], CONFIG["zfc_lon"])
+            st.markdown("<h4 style='text-align:center; color:#1B4D3E;'>Validación de Ubicación</h4>", unsafe_allow_html=True)
+            
+            lat_qp = qp.get("lat")
+            lon_qp = qp.get("lon")
+            
+            if lat_qp and lon_qp:
+                try:
+                    lat = float(lat_qp)
+                    lon = float(lon_qp)
+                    dist = calcular_distancia_km(lat, lon, CONFIG["zfc_lat"], CONFIG["zfc_lon"])
+                    
                     if dist > CONFIG["radio_geofence_km"]:
-                        st.error(f"❌ Estás a **{dist:.2f} km** de la Zona Franca. Debes estar a menos de {CONFIG['radio_geofence_km']} km para registrarte.")
+                        st.error(f"Estás a **{dist:.2f} km** de la Zona Franca. Debes estar a menos de {CONFIG['radio_geofence_km']} km para registrarte.")
+                        if st.button("Volver a intentar validación", use_container_width=True):
+                            try:
+                                del st.query_params["lat"]
+                                del st.query_params["lon"]
+                            except Exception:
+                                pass
+                            st.rerun()
                         st.stop()
                     else:
-                        st.success(f"✅ Ubicación validada. Estás a **{dist:.2f} km** de la Zona Franca.")
-                else:
-                    st.info("📍 Por favor, **permite el acceso a tu ubicación** en el navegador para validar que estás en la Zona Franca.")
+                        st.success(f"Ubicación validada. Estás a **{dist:.2f} km** de la Zona Franca.")
+                except ValueError:
+                    st.error("Error en los datos de ubicación. Intenta de nuevo.")
                     st.stop()
+            else:
+                st.info("Por favor, haz clic en el botón para validar que estás en la Zona Franca.")
+                custom_geo_button()
+                st.stop()
 
             st.markdown("---")
             st.markdown("Completa tus datos para asignarte un turno.")
@@ -569,7 +641,7 @@ if modo_qp == "conductor":
     st.stop()
 
 # ==========================================================================
-# MODO: VIGILANTE (CON BUSCADOR Y ALERTAS)
+# MODO: VIGILANTE
 # ==========================================================================
 if modo_qp == "vigilante":
     render_header_institucional()
@@ -591,9 +663,9 @@ if modo_qp == "vigilante":
                         st.error("Credenciales incorrectas.")
         st.stop()
 
-    # Mostrar alerta de éxito si existe
+    # Mostrar alerta de éxito si existe (SIN EMOJI)
     if "alerta_vig" in st.session_state:
-        st.success(st.session_state.alerta_vig, icon="✅")
+        st.success(st.session_state.alerta_vig)
         del st.session_state.alerta_vig
 
     col_h1, col_h2 = st.columns([4, 1])
@@ -617,8 +689,8 @@ if modo_qp == "vigilante":
         def panel_vigilante():
             turnos = cargar_datos()
             
-            # --- NUEVO BUSCADOR DE PLACA ---
-            buscar_placa_vig = st.text_input("🔍 Buscar vehículo por placa:", placeholder="Ej: ABC123").upper().strip()
+            # --- BUSCADOR DE PLACA (SIN EMOJI) ---
+            buscar_placa_vig = st.text_input("Buscar vehículo por placa:", placeholder="Ingresa la placa para filtrar...").upper().strip()
             if buscar_placa_vig:
                 turnos = [t for t in turnos if buscar_placa_vig in t.get("placa", "").upper()]
 
@@ -718,7 +790,7 @@ if modo_qp == "vigilante":
     st.stop()
 
 # ==========================================================================
-# MODO: OPERADOR (CON BUSCADOR Y ALERTAS)
+# MODO: OPERADOR
 # ==========================================================================
 if modo_qp == "operador":
     render_header_institucional()
@@ -740,9 +812,9 @@ if modo_qp == "operador":
                         st.error("Credenciales incorrectas.")
         st.stop()
 
-    # Mostrar alerta de éxito si existe
+    # Mostrar alerta de éxito si existe (SIN EMOJI)
     if "alerta_op" in st.session_state:
-        st.success(st.session_state.alerta_op, icon="✅")
+        st.success(st.session_state.alerta_op)
         del st.session_state.alerta_op
 
     col_h1, col_h2 = st.columns([4, 1])
@@ -775,8 +847,8 @@ if modo_qp == "operador":
                     st.session_state.alerta_op = "Se ha deshecho la última acción correctamente."
                     st.rerun()
             
-            # --- NUEVO BUSCADOR DE PLACA ---
-            buscar_placa_op = st.text_input("🔍 Buscar turno por placa:", placeholder="Ej: ABC123").upper().strip()
+            # --- BUSCADOR DE PLACA (SIN EMOJI) ---
+            buscar_placa_op = st.text_input("Buscar turno por placa:", placeholder="Ingresa la placa para filtrar...").upper().strip()
             if buscar_placa_op:
                 turnos_g = [t for t in turnos_g if buscar_placa_op in t.get("placa", "").upper()]
 
@@ -825,7 +897,6 @@ if modo_qp == "operador":
                         idx_estado = estados_posibles.index(estado_actual) if estado_actual in estados_posibles else 0
                         nuevo_estado = st.selectbox("Estado", estados_posibles, index=idx_estado)
 
-                        # [SE HA ELIMINADO EL INPUT DE MENSAJE PARA EL CONDUCTOR AQUÍ]
                         mensaje = turno_sel.get("mensaje_admin", "") 
                         
                         mostrar = st.checkbox("Mostrar en pantalla pública", value=bool(turno_sel.get("mostrar_en_pantalla", False)))
@@ -883,6 +954,7 @@ if modo_qp == "operador":
                 st.info("No hay turnos que coincidan con el filtro o búsqueda.")
 
     with tab_pantalla:
+        # ... [EL CÓDIGO DE PANTALLA SE MANTIENE IGUAL] ...
         st.markdown("#### Vista previa de Pantalla Pública")
         st.caption(f"Los vehículos autorizados se muestran por {CONFIG.get('tiempo_en_pantalla_min', 30)} minutos y luego se ocultan automáticamente.")
         turnos_p = cargar_datos()
@@ -914,10 +986,8 @@ if modo_qp == "operador":
                     st.markdown(f'<div class="card-salida"><div class="card-ficho">Ficho {t["id_turno"]}</div><div class="card-placa-sal">{t["placa"]}</div><div class="card-aviso">{t.get("mensaje_admin","") or "—"}</div></div>', unsafe_allow_html=True)
 
     with tab_qr:
-        # ... [EL CÓDIGO DEL QR SE MANTIENE IGUAL, PUEDES COPIARLO DE TU VERSIÓN ORIGINAL] ...
+        # ... [EL CÓDIGO DEL QR SE MANTIENE IGUAL] ...
         st.markdown("#### Centro de Códigos QR")
-        st.caption("Configura la URL base de tu aplicación y descarga los códigos QR que corresponden a cada portal.")
-        st.markdown("##### Paso 1 · Configura la URL base")
         base_url_actual = CONFIG.get("url_base", "").strip().rstrip("/")
         with st.form("form_url_base_qr"):
             base_url_in = st.text_input("URL base de la aplicación", value=base_url_actual, placeholder="https://tu-app.streamlit.app")
@@ -935,7 +1005,6 @@ if modo_qp == "operador":
         elif not HAS_QR:
             st.error("La librería **qrcode[pil]** no está instalada.")
         else:
-            st.markdown("##### Paso 2 · Descarga e imprime los códigos QR")
             portales = [
                 {"clave": "conductor", "titulo": "CONDUCTOR", "subtitulo": "Punto de enturnamiento", "descripcion": "El conductor escanea este QR y accede al formulario.", "color_hex": "#1B4D3E", "archivo_png": "qr_conductor_zfc.png"},
                 {"clave": "vigilante", "titulo": "VIGILANTE", "subtitulo": "Punto de control", "descripcion": "El vigilante escanea este QR y accede a su portal.", "color_hex": "#0D4A56", "archivo_png": "qr_vigilante_zfc.png"},
