@@ -39,7 +39,7 @@ st.set_page_config(
 )
 
 # ==========================================================================
-# CSS CORPORATIVO
+# CSS CORPORATIVO Y TRUCO DE GEOLOCALIZACIÓN (COMPATIBLE IOS/ANDROID)
 # ==========================================================================
 st.markdown("""
 <style>
@@ -105,18 +105,11 @@ st.markdown("""
     div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
     div[data-testid="stAlert"] { border-radius: 8px; }
     
-    /* CSS PARA EL TRUCO DE GEOLOCALIZACIÓN */
-    .geo-container-custom {
-        position: relative;
-        width: 100%;
-        height: 60px;
-        margin-bottom: 20px;
-    }
+    /* TRUCO DE GEOLOCALIZACIÓN: SUPERPOSICIÓN CON MARGEN NEGATIVO (100% MÓVIL) */
     .geo-btn-visual {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-color: var(--zfc-green-main);
+        background-color: #1B4D3E;
         color: white;
+        padding: 15px 30px;
         border-radius: 8px;
         display: flex;
         align-items: center;
@@ -125,15 +118,20 @@ st.markdown("""
         font-weight: 700;
         font-size: 16px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-        pointer-events: none; /* Permite que el clic traspase al iframe invisible */
+        width: 100%;
+        height: 58px;
+        box-sizing: border-box;
+        margin-bottom: 15px;
     }
-    /* Hacemos el iframe real invisible pero clickeable, y lo estiramos sobre nuestro botón */
+    
+    /* Hacemos el iframe real invisible y lo subimos exactamente sobre el botón visual */
     iframe[title="streamlit_geolocation.streamlit_geolocation"] {
-        position: absolute !important;
-        top: 0 !important; left: 0 !important;
-        width: 100% !important; height: 100% !important;
-        opacity: 0 !important;
-        z-index: 10 !important;
+        width: 100% !important;
+        height: 58px !important;
+        opacity: 0.01 !important;
+        position: relative !important;
+        margin-top: -73px !important; /* Compensa la altura + margen */
+        z-index: 9999 !important;
         cursor: pointer !important;
     }
 </style>
@@ -507,10 +505,10 @@ if modo_qp == "conductor":
             else:
                 st.info("Para continuar, haz clic en el botón de abajo y presiona **'Permitir'** cuando tu navegador te pregunte.")
                 
-                # --- TRUCO VISUAL: El botón verde bonito encima del componente real ---
-                st.markdown('<div class="geo-container-custom"><div class="geo-btn-visual">📍 Validar mi Ubicación Ahora</div></div>', unsafe_allow_html=True)
+                # Botón visual (verde y bonito)
+                st.markdown('<div class="geo-btn-visual">📍 Validar mi Ubicación Ahora</div>', unsafe_allow_html=True)
                 
-                # Renderizamos el componente real (el CSS lo hace invisible y lo superpone)
+                # Componente real (invisible, superpuesto con CSS)
                 loc = streamlit_geolocation()
                 
                 if loc and loc.get("latitude") is not None:
