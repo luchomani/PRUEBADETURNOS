@@ -13,7 +13,6 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -22,6 +21,12 @@ try:
     HAS_QR = True
 except ImportError:
     HAS_QR = False
+
+try:
+    from streamlit_geolocation import streamlit_geolocation
+    HAS_GEO = True
+except ImportError:
+    HAS_GEO = False
 
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -99,6 +104,38 @@ st.markdown("""
     div[data-testid="stMetricValue"] { color: var(--zfc-green-dark) !important; font-weight: 700; }
     div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
     div[data-testid="stAlert"] { border-radius: 8px; }
+    
+    /* CSS PARA EL TRUCO DE GEOLOCALIZACIÓN */
+    .geo-container-custom {
+        position: relative;
+        width: 100%;
+        height: 60px;
+        margin-bottom: 20px;
+    }
+    .geo-btn-visual {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background-color: var(--zfc-green-main);
+        color: white;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+        pointer-events: none; /* Permite que el clic traspase al iframe invisible */
+    }
+    /* Hacemos el iframe real invisible pero clickeable, y lo estiramos sobre nuestro botón */
+    iframe[title="streamlit_geolocation.streamlit_geolocation"] {
+        position: absolute !important;
+        top: 0 !important; left: 0 !important;
+        width: 100% !important; height: 100% !important;
+        opacity: 0 !important;
+        z-index: 10 !important;
+        cursor: pointer !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -293,98 +330,6 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
-# --- COMPONENTE DE GEOLOCALIZACIÓN (MISMA PESTAÑA) ---
-def custom_geo_button():
-    html_code = """
-    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
-        <button id="geo-btn" onclick="getLocation()" style="
-            background-color: #1B4D3E;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-            width: 100%;
-            justify-content: center;
-            transition: background-color 0.3s;
-        " onmouseover="this.style.backgroundColor='#2C6B56'" onmouseout="this.style.backgroundColor='#1B4D3E'">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                <circle cx="12" cy="10" r="3"></circle>
-            </svg>
-            Validar mi Ubicación Ahora
-        </button>
-    </div>
-    <script>
-    let finalUrl = "";
-
-    function getLocation() {
-        const btn = document.getElementById("geo-btn");
-        
-        // Si ya obtuvimos la ubicación, redirigir
-        if (finalUrl !== "") {
-            if (window.parent) {
-                window.parent.location.href = finalUrl;
-            } else if (window.top) {
-                window.top.location.href = finalUrl;
-            } else {
-                window.location.href = finalUrl;
-            }
-            return;
-        }
-
-        btn.innerHTML = "Obteniendo ubicación...";
-        btn.disabled = true;
-        btn.style.backgroundColor = "#6B7280";
-
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    try {
-                        const url = new URL(window.parent.location.href);
-                        url.searchParams.set("lat", position.coords.latitude);
-                        url.searchParams.set("lon", position.coords.longitude);
-                        finalUrl = url.toString();
-
-                        btn.innerHTML = "Ubicación validada. Haz clic para continuar.";
-                        btn.disabled = false;
-                        btn.style.backgroundColor = "#12402A";
-                    } catch (e) {
-                        btn.innerHTML = "Error de redirección. Recarga la página.";
-                        btn.disabled = false;
-                    }
-                },
-                function(error) {
-                    btn.innerHTML = "Validar mi Ubicación Ahora";
-                    btn.disabled = false;
-                    btn.style.backgroundColor = "#1B4D3E";
-                    
-                    let msg = "Error desconocido.";
-                    if (error.code === 1) msg = "Permiso denegado. Habilita la ubicación en tu navegador.";
-                    if (error.code === 2) msg = "Ubicación no disponible. Enciende el GPS.";
-                    if (error.code === 3) msg = "Tiempo de espera agotado.";
-                    
-                    alert("Error de ubicación: " + msg);
-                },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-            );
-        } else {
-            alert("Geolocalización no soportada por este navegador.");
-            btn.innerHTML = "Validar mi Ubicación Ahora";
-            btn.disabled = false;
-            btn.style.backgroundColor = "#1B4D3E";
-        }
-    }
-    </script>
-    """
-    components.html(html_code, height=80)
-
 # ==========================================================================
 # SESSION STATE Y PARÁMETROS
 # ==========================================================================
@@ -557,34 +502,30 @@ if modo_qp == "conductor":
             # --- VALIDACIÓN DE GEOLOCALIZACIÓN ---
             st.markdown("<h4 style='text-align:center; color:#1B4D3E;'>Validación de Ubicación</h4>", unsafe_allow_html=True)
             
-            lat_qp = qp.get("lat")
-            lon_qp = qp.get("lon")
-            
-            if lat_qp and lon_qp:
-                try:
-                    lat = float(lat_qp)
-                    lon = float(lon_qp)
+            if not HAS_GEO:
+                st.error("⚠️ La librería de geolocalización no está instalada. Agrega 'streamlit-geolocation' a tu requirements.txt.")
+            else:
+                st.info("Para continuar, haz clic en el botón de abajo y presiona **'Permitir'** cuando tu navegador te pregunte.")
+                
+                # --- TRUCO VISUAL: El botón verde bonito encima del componente real ---
+                st.markdown('<div class="geo-container-custom"><div class="geo-btn-visual">📍 Validar mi Ubicación Ahora</div></div>', unsafe_allow_html=True)
+                
+                # Renderizamos el componente real (el CSS lo hace invisible y lo superpone)
+                loc = streamlit_geolocation()
+                
+                if loc and loc.get("latitude") is not None:
+                    lat = loc["latitude"]
+                    lon = loc["longitude"]
                     dist = calcular_distancia_km(lat, lon, CONFIG["zfc_lat"], CONFIG["zfc_lon"])
                     
                     if dist > CONFIG["radio_geofence_km"]:
                         st.error(f"Estás a **{dist:.2f} km** de la Zona Franca. Debes estar a menos de {CONFIG['radio_geofence_km']} km para registrarte.")
-                        if st.button("Volver a intentar validación", use_container_width=True):
-                            try:
-                                del st.query_params["lat"]
-                                del st.query_params["lon"]
-                            except Exception:
-                                pass
-                            st.rerun()
                         st.stop()
                     else:
                         st.success(f"Ubicación validada. Estás a **{dist:.2f} km** de la Zona Franca.")
-                except ValueError:
-                    st.error("Error en los datos de ubicación. Intenta de nuevo.")
+                else:
+                    st.warning("Debes permitir el acceso a tu ubicación para que el formulario aparezca.")
                     st.stop()
-            else:
-                st.info("Por favor, haz clic en el botón para validar que estás en la Zona Franca.")
-                custom_geo_button()
-                st.stop()
 
             st.markdown("---")
             st.markdown("Completa tus datos para asignarte un turno.")
