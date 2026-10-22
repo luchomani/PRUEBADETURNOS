@@ -293,10 +293,10 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
-# --- COMPONENTE DE GEOLOCALIZACIÓN (SOLUCIÓN BLOQUEO MÓVIL) ---
+# --- COMPONENTE DE GEOLOCALIZACIÓN (MISMA PESTAÑA) ---
 def custom_geo_button():
     html_code = """
-    <div id="geo-container" style="display: flex; justify-content: center; margin-bottom: 10px;">
+    <div style="display: flex; justify-content: center; margin-bottom: 10px;">
         <button id="geo-btn" onclick="getLocation()" style="
             background-color: #1B4D3E;
             color: white;
@@ -322,9 +322,23 @@ def custom_geo_button():
         </button>
     </div>
     <script>
+    let finalUrl = "";
+
     function getLocation() {
-        const container = document.getElementById("geo-container");
         const btn = document.getElementById("geo-btn");
+        
+        // Si ya obtuvimos la ubicación, redirigir
+        if (finalUrl !== "") {
+            if (window.parent) {
+                window.parent.location.href = finalUrl;
+            } else if (window.top) {
+                window.top.location.href = finalUrl;
+            } else {
+                window.location.href = finalUrl;
+            }
+            return;
+        }
+
         btn.innerHTML = "Obteniendo ubicación...";
         btn.disabled = true;
         btn.style.backgroundColor = "#6B7280";
@@ -333,31 +347,17 @@ def custom_geo_button():
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     try {
-                        const url = new URL(window.top.location.href);
+                        const url = new URL(window.parent.location.href);
                         url.searchParams.set("lat", position.coords.latitude);
                         url.searchParams.set("lon", position.coords.longitude);
-                        
-                        // Reemplazamos el botón por un enlace clickeable para evitar el bloqueo de popups
-                        container.innerHTML = `
-                            <a href="${url.toString()}" target="_top" style="
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                background-color: #1B4D3E;
-                                color: white;
-                                padding: 15px 30px;
-                                border-radius: 8px;
-                                text-decoration: none;
-                                font-weight: 700;
-                                font-size: 16px;
-                                width: 100%;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-                            ">
-                                Ubicación validada. Haz clic aquí para continuar.
-                            </a>
-                        `;
+                        finalUrl = url.toString();
+
+                        btn.innerHTML = "Ubicación validada. Haz clic para continuar.";
+                        btn.disabled = false;
+                        btn.style.backgroundColor = "#12402A";
                     } catch (e) {
-                        btn.innerHTML = "Error de redirección";
+                        btn.innerHTML = "Error de redirección. Recarga la página.";
+                        btn.disabled = false;
                     }
                 },
                 function(error) {
