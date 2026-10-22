@@ -293,10 +293,10 @@ def render_header_institucional():
                 st.image(fn, use_container_width=True)
                 break
 
-# --- COMPONENTE DE GEOLOCALIZACIÓN (SOLUCIÓN BLOQUEO MÓVIL) ---
+# --- COMPONENTE DE GEOLOCALIZACIÓN (FIX ANDROID CON FORMULARIO) ---
 def custom_geo_button():
     html_code = """
-    <div id="geo-container" style="display: flex; justify-content: center; margin-bottom: 10px;">
+    <div id="geo-container" style="display: flex; justify-content: center; margin-bottom: 10px; width: 100%;">
         <button id="geo-btn" onclick="getLocation()" style="
             background-color: #1B4D3E;
             color: white;
@@ -333,28 +333,31 @@ def custom_geo_button():
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     try {
-                        const url = new URL(window.top.location.href);
-                        url.searchParams.set("lat", position.coords.latitude);
-                        url.searchParams.set("lon", position.coords.longitude);
-                        
-                        // Reemplazamos el botón por un enlace clickeable para evitar el bloqueo de popups
+                        // SOLUCIÓN ANDROID: Usamos un formulario en lugar de un enlace <a>
+                        // Los formularios con target="_top" son aceptados por Chrome en Android
                         container.innerHTML = `
-                            <a href="${url.toString()}" target="_top" style="
-                                display: flex;
-                                justify-content: center;
-                                align-items: center;
-                                background-color: #1B4D3E;
-                                color: white;
-                                padding: 15px 30px;
-                                border-radius: 8px;
-                                text-decoration: none;
-                                font-weight: 700;
-                                font-size: 16px;
-                                width: 100%;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-                            ">
-                                Ubicación validada. Haz clic aquí para continuar.
-                            </a>
+                            <form action="" method="GET" target="_top" style="margin:0; width:100%;">
+                                <input type="hidden" name="modo" value="conductor">
+                                <input type="hidden" name="lat" value="${position.coords.latitude}">
+                                <input type="hidden" name="lon" value="${position.coords.longitude}">
+                                <button type="submit" style="
+                                    background-color: #1B4D3E;
+                                    color: white;
+                                    padding: 15px 30px;
+                                    border: none;
+                                    border-radius: 8px;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    cursor: pointer;
+                                    width: 100%;
+                                    box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                ">
+                                    Ubicación validada. Haz clic para continuar.
+                                </button>
+                            </form>
                         `;
                     } catch (e) {
                         btn.innerHTML = "Error de redirección";
