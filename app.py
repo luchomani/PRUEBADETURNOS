@@ -28,7 +28,6 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
-# Asegúrate de tener "LOGO SANTANDER.jpg" en la raíz de tu proyecto.
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
     page_icon="LOGO SANTANDER.jpg", 
@@ -41,10 +40,13 @@ st.set_page_config(
 # ==========================================================================
 st.markdown("""
 <style>
+    /* Forzar el color primario de Streamlit a verde */
     :root {
+        --primary-color: #1B4D3E !important;
         --zfc-green-dark:  #0F3A24;
         --zfc-green-main:  #1B4D3E;
         --zfc-green-mid:   #2C6B56;
+        --zfc-light-green: #B8D4C5; /* Verde clarito para bordes */
         --zfc-olive:       #556B2F;
         --zfc-bg:          #F5F7F6;
         --zfc-card:        #FFFFFF;
@@ -76,7 +78,7 @@ st.markdown("""
         font-size: 15px !important;
     }
 
-    /* Forzar bordes verdes en inputs y quitar el rojo por defecto */
+    /* Inputs normales */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
     .stNumberInput > div > div > input {
@@ -86,14 +88,18 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 16px !important;
         padding: 12px 14px !important;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        transition: all 0.2s ease;
     }
 
+    /* Anular bordes rojos al seleccionar (Focus) */
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="base-input"]:focus-within,
+    div[data-baseweb="select"]:focus-within,
     .stTextInput > div > div > input:focus,
     .stTextArea > div > div > textarea:focus,
     .stNumberInput > div > div > input:focus {
-        border-color: #1B4D3E !important;
-        box-shadow: 0 0 0 2px rgba(27,77,62,0.2) !important;
+        border-color: var(--zfc-green-mid) !important;
+        box-shadow: 0 0 0 2px rgba(44, 107, 86, 0.2) !important;
         outline: none !important;
     }
 
@@ -104,6 +110,7 @@ st.markdown("""
         opacity: 1 !important;
     }
 
+    /* Selectbox */
     .stSelectbox > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #C9D1CC !important;
@@ -111,11 +118,6 @@ st.markdown("""
         color: #1B1B1B !important;
     }
     .stSelectbox > div > div > div { color: #1B1B1B !important; }
-    
-    .stSelectbox > div > div:focus-within {
-        border-color: #1B4D3E !important;
-        box-shadow: 0 0 0 2px rgba(27,77,62,0.2) !important;
-    }
 
     div[data-baseweb="popover"] ul,
     div[data-baseweb="menu"] ul { background-color: #FFFFFF !important; }
@@ -130,11 +132,12 @@ st.markdown("""
         color: #12402A !important;
     }
 
+    /* Botones Principales */
     .stButton>button {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
         border-radius: 8px;
-        border: none;
+        border: 1px solid var(--zfc-green-main) !important;
         font-weight: 700;
         font-size: 16px;
         padding: 0.8rem 1.2rem;
@@ -144,6 +147,7 @@ st.markdown("""
     .stButton>button:hover {
         background-color: var(--zfc-green-mid) !important;
         color: #FFFFFF !important;
+        border-color: var(--zfc-green-mid) !important;
     }
 
     .stFormSubmitButton > button {
@@ -153,9 +157,10 @@ st.markdown("""
         font-size: 17px;
         padding: 0.9rem 1.5rem;
         border-radius: 8px;
+        border: 1px solid var(--zfc-green-main) !important;
     }
 
-    /* COLORES DE LAS PESTAÑAS (TABS) */
+    /* Pestañas (Tabs) - Anular el rojo por defecto */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -170,13 +175,19 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Forzar barra inferior verde (Anula el rojo de Streamlit) */
+    /* Forzar barra inferior verde en las pestañas */
     div[data-baseweb="tab-highlight"] {
-        background-color: var(--zfc-green-main) !important;
+        background-color: var(--zfc-green-mid) !important;
         height: 3px !important;
     }
     div[data-baseweb="tab-border"] {
         background-color: transparent !important;
+    }
+
+    /* Casillas de verificación (Checkboxes) */
+    div[data-testid="stCheckbox"] label span div[data-checked="true"] {
+        background-color: var(--zfc-green-main) !important;
+        border-color: var(--zfc-green-main) !important;
     }
 
     .ticket-card {
@@ -231,7 +242,7 @@ st.markdown("""
         text-transform: uppercase;
     }
     .badge-espera     { background: #FBF3D9; color: #8A6A00; border: 1px solid #E5D7A0; }
-    .badge-ingresar   { background: #E6F0EB; color: #12402A; border: 1px solid #B8D4C5; }
+    .badge-ingresar   { background: #E6F0EB; color: #12402A; border: 1px solid var(--zfc-light-green); }
     .badge-salir      { background: #FCE9E9; color: #9B1C1C; border: 1px solid #E8BFBF; }
     .badge-zf         { background: #E0E7FF; color: #233876; border: 1px solid #B4C0E8; }
     .badge-finalizado { background: #EDEDED; color: #4B5563; border: 1px solid #D5D5D5; }
@@ -270,7 +281,7 @@ st.markdown("""
 
     .card-ingreso {
         background: #FFFFFF;
-        border: 1px solid #B8D4C5;
+        border: 1px solid var(--zfc-light-green);
         border-left: 4px solid var(--zfc-green-main);
         padding: 16px;
         border-radius: 0 0 8px 8px;
@@ -323,7 +334,7 @@ st.markdown("""
 
     .role-card {
         background: #FFFFFF;
-        border: 1px solid var(--zfc-border);
+        border: 1px solid var(--zfc-light-green);
         border-top: 4px solid var(--zfc-green-main);
         border-radius: 10px;
         padding: 28px 20px;
@@ -783,9 +794,9 @@ if modo_qp == "conductor":
                     st.warning("Tu turno ya no está disponible.")
                     return
                 
-                # LÓGICA: Si el mensaje está vacío o es el viejo "En espera de autorización", forzar el nuevo texto.
+                # LÓGICA BLINDADA: Si está vacío o tiene el texto viejo, forzar el nuevo.
                 msg = actual.get("mensaje_admin", "")
-                if not msg or msg == "En espera de autorización":
+                if not msg or "espera" in msg.lower():
                     msg = "Dirígete a la portería"
 
                 st.markdown(f"""
