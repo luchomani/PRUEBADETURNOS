@@ -29,6 +29,7 @@ except ImportError:
 # ==========================================================================
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
+    page_icon="Z",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -107,17 +108,26 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 6px; }
+    /* ESTILO PESTAÑAS (TABS) - ELIMINACIÓN DE BARRA ROJA */
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 6px; 
+        border-bottom: 2px solid var(--zfc-border);
+    }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
         border-radius: 6px 6px 0 0;
         padding: 10px 18px;
         font-weight: 600;
         color: #2C3E50;
+        border: none !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
+        border-bottom: 3px solid var(--zfc-green-dark) !important;
+    }
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: var(--zfc-green-main) !important;
     }
 
     .ticket-card {
@@ -348,7 +358,6 @@ def obtener_letra_jornada(dt=None):
     if dt is None:
         colombia_tz = timezone(timedelta(hours=-5))
         dt = datetime.now(colombia_tz)
-    # Genera letra cíclica A-Z según el día del año o ciclo operativo
     dia_num = dt.timetuple().tm_yday
     letra_idx = (dia_num - 1) % 26
     return chr(65 + letra_idx)
@@ -943,7 +952,7 @@ if modo_qp == "vigilante":
         def panel_vigilante():
             turnos = cargar_datos()
 
-            busq_vig = st.text_input("Buscar por Placa o Ficho (Vigilante)", placeholder="Ej: ABC123 o T-001-A").upper().strip()
+            busq_vig = st.text_input("Buscar turno asignado o Placa", placeholder="Ej: ABC123 o T-001-A", key="busq_vig_input").upper().strip()
 
             def filtrar_busqueda(lista_t):
                 if not busq_vig:
@@ -1158,7 +1167,7 @@ if modo_qp == "operador":
                     st.success("Proceso exitoso: Se ha deshecho la última acción correctamente.")
                     st.rerun()
 
-            busq_op = st.text_input("Buscar por Placa o Ficho (Operador)", placeholder="Ej: ABC123 o T-001-A", key="busq_op_input").upper().strip()
+            busq_op = st.text_input("Buscar turno asignado o Placa", placeholder="Ej: ABC123 o T-001-A", key="busq_op_input").upper().strip()
 
             filtro = st.selectbox(
                 "Filtrar por estado:",
@@ -1190,19 +1199,18 @@ if modo_qp == "operador":
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
-                        st.markdown("##### Editar Datos del Conductor")
+                        st.markdown("##### Datos del Turno y Conductor")
                         
                         nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
-                        
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
-                        nuevo_nombre = st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', '')).title().strip()
-                        nueva_cedula = st.text_input("Cédula", value=turno_sel.get('cedula', '')).strip()
-                        nuevo_telefono = st.text_input("Teléfono", value=turno_sel.get('telefono', '')).strip()
                         
-                        lista_bodegas = ["Seleccione una bodega..."] + CONFIG.get("bodegas", [])
-                        bodega_actual = turno_sel.get("bodega", "")
-                        idx_bodega = lista_bodegas.index(bodega_actual) if bodega_actual in lista_bodegas else 0
-                        nueva_bodega = st.selectbox("Bodega de Destino", lista_bodegas, index=idx_bodega)
+                        # Campos bloqueados para no modificar datos originales del conductor
+                        st.text_input("Nombre del Conductor", value=turno_sel.get('nombre', ''), disabled=True)
+                        st.text_input("Cédula", value=turno_sel.get('cedula', ''), disabled=True)
+                        st.text_input("Teléfono", value=turno_sel.get('telefono', ''), disabled=True)
+                        
+                        bodega_actual = turno_sel.get("bodega", "") or "Sin bodega asignada"
+                        st.text_input("Bodega de Destino", value=bodega_actual, disabled=True)
                         
                         st.text_area(
                             "Observaciones del Conductor (Solo lectura)", 
@@ -1210,8 +1218,6 @@ if modo_qp == "operador":
                             disabled=True,
                             help="Este campo solo puede ser modificado por el conductor al momento de registrarse."
                         )
-                        
-                        st.caption(f"<b>Registrado originalmente:</b> {fecha_legible(turno_sel.get('fecha_hora',''))}")
 
                         st.markdown("---")
                         st.markdown("##### Estado y Gestión")
@@ -1285,11 +1291,6 @@ if modo_qp == "operador":
                                             
                                             t["id_turno"] = nuevo_tiquet
                                             t["placa"] = nueva_placa_clean
-                                            t["nombre"] = nuevo_nombre
-                                            t["cedula"] = nueva_cedula
-                                            t["telefono"] = nuevo_telefono
-                                            t["bodega"] = nueva_bodega if nueva_bodega != "Seleccione una bodega..." else ""
-                                            
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
                                             t["mostrar_en_pantalla"] = mostrar
