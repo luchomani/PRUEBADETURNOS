@@ -28,9 +28,10 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
+# IMPORTANTE: Asegúrate de que "LOGO SANTANDER.png" sea el nombre exacto de la imagen en tu repositorio.
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
-    page_icon="LOGO SANTANDER.jpg", 
+    page_icon="LOGO SANTANDER.png", 
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -40,13 +41,11 @@ st.set_page_config(
 # ==========================================================================
 st.markdown("""
 <style>
-    /* Forzar el color primario de Streamlit a verde */
     :root {
-        --primary-color: #1B4D3E !important;
         --zfc-green-dark:  #0F3A24;
         --zfc-green-main:  #1B4D3E;
         --zfc-green-mid:   #2C6B56;
-        --zfc-light-green: #B8D4C5; /* Verde clarito para bordes */
+        --zfc-light-green: #B8D4C5;
         --zfc-olive:       #556B2F;
         --zfc-bg:          #F5F7F6;
         --zfc-card:        #FFFFFF;
@@ -78,7 +77,18 @@ st.markdown("""
         font-size: 15px !important;
     }
 
-    /* Inputs normales */
+    /* FIX: Anulación agresiva de bordes rojos en Inputs */
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="base-input"]:focus-within,
+    div[data-baseweb="select"]:focus-within,
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: var(--zfc-green-main) !important;
+        box-shadow: 0 0 0 2px rgba(27, 77, 62, 0.2) !important;
+        outline: none !important;
+    }
+
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
     .stNumberInput > div > div > input {
@@ -88,29 +98,8 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 16px !important;
         padding: 12px 14px !important;
-        transition: all 0.2s ease;
     }
 
-    /* Anular bordes rojos al seleccionar (Focus) */
-    div[data-baseweb="input"]:focus-within,
-    div[data-baseweb="base-input"]:focus-within,
-    div[data-baseweb="select"]:focus-within,
-    .stTextInput > div > div > input:focus,
-    .stTextArea > div > div > textarea:focus,
-    .stNumberInput > div > div > input:focus {
-        border-color: var(--zfc-green-mid) !important;
-        box-shadow: 0 0 0 2px rgba(44, 107, 86, 0.2) !important;
-        outline: none !important;
-    }
-
-    .stTextInput > div > div > input::placeholder,
-    .stTextArea > div > div > textarea::placeholder,
-    .stNumberInput > div > div > input::placeholder {
-        color: #9CA3AF !important;
-        opacity: 1 !important;
-    }
-
-    /* Selectbox */
     .stSelectbox > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #C9D1CC !important;
@@ -132,7 +121,6 @@ st.markdown("""
         color: #12402A !important;
     }
 
-    /* Botones Principales */
     .stButton>button {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
@@ -142,7 +130,6 @@ st.markdown("""
         font-size: 16px;
         padding: 0.8rem 1.2rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-        transition: background-color 0.2s ease;
     }
     .stButton>button:hover {
         background-color: var(--zfc-green-mid) !important;
@@ -160,7 +147,7 @@ st.markdown("""
         border: 1px solid var(--zfc-green-main) !important;
     }
 
-    /* Pestañas (Tabs) - Anular el rojo por defecto */
+    /* FIX: Anulación del borde rojo en las Pestañas (Tabs) */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -174,17 +161,15 @@ st.markdown("""
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
     }
-    
-    /* Forzar barra inferior verde en las pestañas */
     div[data-baseweb="tab-highlight"] {
-        background-color: var(--zfc-green-mid) !important;
+        background-color: var(--zfc-green-main) !important;
         height: 3px !important;
     }
     div[data-baseweb="tab-border"] {
         background-color: transparent !important;
     }
 
-    /* Casillas de verificación (Checkboxes) */
+    /* Checkboxes verdes */
     div[data-testid="stCheckbox"] label span div[data-checked="true"] {
         background-color: var(--zfc-green-main) !important;
         border-color: var(--zfc-green-main) !important;
@@ -794,7 +779,6 @@ if modo_qp == "conductor":
                     st.warning("Tu turno ya no está disponible.")
                     return
                 
-                # LÓGICA BLINDADA: Si está vacío o tiene el texto viejo, forzar el nuevo.
                 msg = actual.get("mensaje_admin", "")
                 if not msg or "espera" in msg.lower():
                     msg = "Dirígete a la portería"
