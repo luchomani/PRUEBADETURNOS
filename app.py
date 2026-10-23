@@ -28,7 +28,7 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
-# NOTA: Asegúrate de que el archivo "LOGO SANTANDER.jpg" exista en la raíz de tu proyecto.
+# Asegúrate de tener "LOGO SANTANDER.jpg" en la raíz de tu proyecto.
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
     page_icon="LOGO SANTANDER.jpg", 
@@ -76,6 +76,7 @@ st.markdown("""
         font-size: 15px !important;
     }
 
+    /* Forzar bordes verdes en inputs y quitar el rojo por defecto */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
     .stNumberInput > div > div > input {
@@ -85,6 +86,15 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 16px !important;
         padding: 12px 14px !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: #1B4D3E !important;
+        box-shadow: 0 0 0 2px rgba(27,77,62,0.2) !important;
+        outline: none !important;
     }
 
     .stTextInput > div > div > input::placeholder,
@@ -94,12 +104,6 @@ st.markdown("""
         opacity: 1 !important;
     }
 
-    .stTextInput > div > div > input:focus,
-    .stTextArea > div > div > textarea:focus {
-        border-color: #1B4D3E !important;
-        box-shadow: 0 0 0 2px rgba(27,77,62,0.15) !important;
-    }
-
     .stSelectbox > div > div {
         background-color: #FFFFFF !important;
         border: 1.5px solid #C9D1CC !important;
@@ -107,6 +111,11 @@ st.markdown("""
         color: #1B1B1B !important;
     }
     .stSelectbox > div > div > div { color: #1B1B1B !important; }
+    
+    .stSelectbox > div > div:focus-within {
+        border-color: #1B4D3E !important;
+        box-shadow: 0 0 0 2px rgba(27,77,62,0.2) !important;
+    }
 
     div[data-baseweb="popover"] ul,
     div[data-baseweb="menu"] ul { background-color: #FFFFFF !important; }
@@ -130,6 +139,7 @@ st.markdown("""
         font-size: 16px;
         padding: 0.8rem 1.2rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        transition: background-color 0.2s ease;
     }
     .stButton>button:hover {
         background-color: var(--zfc-green-mid) !important;
@@ -145,7 +155,7 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    /* Color de la barra inferior de las pestañas */
+    /* COLORES DE LAS PESTAÑAS (TABS) */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] {
         background-color: #EDF1EE;
@@ -153,15 +163,20 @@ st.markdown("""
         padding: 10px 18px;
         font-weight: 600;
         color: #2C3E50;
+        border-bottom: none !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: var(--zfc-green-main) !important;
         color: #FFFFFF !important;
     }
     
-    /* Solución al color rojo de la barra indicadora */
+    /* Forzar barra inferior verde (Anula el rojo de Streamlit) */
     div[data-baseweb="tab-highlight"] {
         background-color: var(--zfc-green-main) !important;
+        height: 3px !important;
+    }
+    div[data-baseweb="tab-border"] {
+        background-color: transparent !important;
     }
 
     .ticket-card {
@@ -768,8 +783,10 @@ if modo_qp == "conductor":
                     st.warning("Tu turno ya no está disponible.")
                     return
                 
-                # MENSAJE ACTUALIZADO
-                msg = actual.get("mensaje_admin") or "Dirígete a la portería"
+                # LÓGICA: Si el mensaje está vacío o es el viejo "En espera de autorización", forzar el nuevo texto.
+                msg = actual.get("mensaje_admin", "")
+                if not msg or msg == "En espera de autorización":
+                    msg = "Dirígete a la portería"
 
                 st.markdown(f"""
                 <div class="ticket-card">
@@ -912,7 +929,7 @@ if modo_qp == "conductor":
                                 "tipo_movimiento": "Ingresar",
                                 "estado": "En Espera",
                                 "fecha_hora": ahora_str(),
-                                "mensaje_admin": "Dirígete a la portería", # Actualizado por defecto
+                                "mensaje_admin": "Dirígete a la portería",
                                 "mostrar_en_pantalla": False,
                                 "fecha_autorizacion": None,
                                 "fecha_ingreso_zf": None,
@@ -1063,7 +1080,7 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
-                                st.toast("Proceso Exitoso", icon="✔️")
+                                st.toast("Proceso Exitoso", icon=":material/check_circle:")
                                 time.sleep(1)
                                 st.rerun()
 
@@ -1095,7 +1112,7 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
-                                st.toast("Proceso Exitoso", icon="✔️")
+                                st.toast("Proceso Exitoso", icon=":material/check_circle:")
                                 time.sleep(1)
                                 st.rerun()
 
@@ -1311,13 +1328,13 @@ if modo_qp == "operador":
                             if eliminar:
                                 if pass_confirm != CONFIG.get("contrasena_admin"):
                                     st.error("Contraseña incorrecta. No se puede eliminar el turno.")
-                                    st.toast("Proceso Denegado", icon="❌")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     turnos_g = [t for t in turnos_g if t.get("uid") != id_sel]
                                     guardar_datos(turnos_g)
                                     st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
-                                    st.toast("Proceso Exitoso", icon="✔️")
+                                    st.toast("Proceso Exitoso", icon=":material/check_circle:")
                                     time.sleep(1)
                                     st.rerun()
                             else:
@@ -1341,13 +1358,13 @@ if modo_qp == "operador":
 
                                 if placa_duplicada:
                                     st.error(f"La placa {nueva_placa} ya está registrada en otro turno activo.")
-                                    st.toast("Proceso Denegado", icon="❌")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 elif tiquet_duplicado:
                                     st.error(f"El Ficho {nuevo_tiquet} ya está en uso en esta misma jornada. Por favor asigne uno diferente.")
-                                    st.toast("Proceso Denegado", icon="❌")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 elif not nuevo_tiquet:
                                     st.error("El número de Ficho no puede estar vacío.")
-                                    st.toast("Proceso Denegado", icon="❌")
+                                    st.toast("Proceso Denegado", icon=":material/error:")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     for t in turnos_g:
@@ -1365,7 +1382,7 @@ if modo_qp == "operador":
                                             break
                                     guardar_datos(turnos_g)
                                     st.success("Cambios guardados exitosamente.")
-                                    st.toast("Proceso Exitoso", icon="✔️")
+                                    st.toast("Proceso Exitoso", icon=":material/check_circle:")
                                     time.sleep(1)
                                     st.rerun()
             else:
