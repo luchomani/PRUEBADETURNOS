@@ -11,7 +11,7 @@ import math
 import time
 import copy
 import uuid
-import re  # <-- Importado para manejo avanzado de textos (Regex)
+import re
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
@@ -28,9 +28,10 @@ except ImportError:
 # ==========================================================================
 # CONFIGURACIÓN DE PÁGINA
 # ==========================================================================
+# NOTA: Asegúrate de que el archivo "LOGO SANTANDER.jpg" exista en la raíz de tu proyecto.
 st.set_page_config(
     page_title="Turnos y Accesos | Zona Franca Santander",
-    page_icon="Z",
+    page_icon="LOGO SANTANDER.jpg", 
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -41,9 +42,10 @@ st.set_page_config(
 st.markdown("""
 <style>
     :root {
-        --zfc-green-dark:  #12402A;
+        --zfc-green-dark:  #0F3A24;
         --zfc-green-main:  #1B4D3E;
         --zfc-green-mid:   #2C6B56;
+        --zfc-olive:       #556B2F;
         --zfc-bg:          #F5F7F6;
         --zfc-card:        #FFFFFF;
         --zfc-text:        #2C3E50;
@@ -345,7 +347,7 @@ st.markdown("""
     }
 
     div[data-testid="stMetricValue"] { color: var(--zfc-green-dark) !important; font-weight: 700; }
-    div[data-testid="stMetricLabel"] { color: #556B2F !important; font-weight: 600; }
+    div[data-testid="stMetricLabel"] { color: var(--zfc-olive) !important; font-weight: 600; }
     div[data-testid="stAlert"] { border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
@@ -405,8 +407,6 @@ def obtener_ultimo_corte():
         return ayer.replace(hour=18, minute=0, second=0, microsecond=0)
 
 def obtener_letra_jornada(dt_obj):
-    # Genera una letra basada en el día del año (1=A, 2=B... 26=Z).
-    # Si pasa de 26, vuelve a iniciar.
     dia_del_ano = dt_obj.timetuple().tm_yday
     letra = chr(65 + ((dia_del_ano - 1) % 26)) 
     return letra
@@ -458,7 +458,6 @@ def cargar_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                
                 if cfg.get("config_version", 1) < DEFAULT_CONFIG["config_version"]:
                     cfg["config_version"] = DEFAULT_CONFIG["config_version"]
                     cfg["contrasena_admin"] = DEFAULT_CONFIG["contrasena_admin"]
@@ -466,7 +465,6 @@ def cargar_config():
                     cfg["contrasena_vigilante"] = DEFAULT_CONFIG["contrasena_vigilante"]
                     cfg["bodegas"] = DEFAULT_CONFIG["bodegas"]
                     guardar_config(cfg)
-                    
                 return {**DEFAULT_CONFIG, **cfg}
         except Exception:
             pass
@@ -672,10 +670,10 @@ if modo_qp == "pantalla":
         with c2:
             st.markdown("""
             <div style="text-align:center; padding: 8px 0;">
-                <div style="color:#12402A; font-size:32px; font-weight:900;">
+                <div style="color:#0F3A24; font-size:32px; font-weight:900;">
                     CONTROL DE ACCESOS EN TIEMPO REAL
                 </div>
-                <div style="color:#6B7280; font-size:14px; letter-spacing:3px; margin-top:6px;">
+                <div style="color:#556B2F; font-size:14px; letter-spacing:3px; margin-top:6px;">
                     ZONA FRANCA DE CÚCUTA · ZONA FRANCA SANTANDER
                 </div>
             </div>
@@ -742,7 +740,7 @@ if modo_qp == "conductor":
         padding: 16px 20px;
         border-radius: 8px;
         margin: 15px 0 25px 0;
-        color: #12402A;
+        color: #0F3A24;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04);
         font-size: 15px;
         font-weight: 600;
@@ -769,7 +767,9 @@ if modo_qp == "conductor":
                 if not actual:
                     st.warning("Tu turno ya no está disponible.")
                     return
-                msg = actual.get("mensaje_admin") or "En espera de autorización"
+                
+                # MENSAJE ACTUALIZADO
+                msg = actual.get("mensaje_admin") or "Dirígete a la portería"
 
                 st.markdown(f"""
                 <div class="ticket-card">
@@ -912,7 +912,7 @@ if modo_qp == "conductor":
                                 "tipo_movimiento": "Ingresar",
                                 "estado": "En Espera",
                                 "fecha_hora": ahora_str(),
-                                "mensaje_admin": "En espera de autorización",
+                                "mensaje_admin": "Dirígete a la portería", # Actualizado por defecto
                                 "mostrar_en_pantalla": False,
                                 "fecha_autorizacion": None,
                                 "fecha_ingreso_zf": None,
@@ -1007,7 +1007,6 @@ if modo_qp == "vigilante":
         def panel_vigilante():
             turnos = cargar_datos()
             
-            # Buscador Vigilante
             busqueda_vig = st.text_input("Buscar turno asignado o Placa", key="search_vig").upper().strip()
 
             pendientes_ing = [
@@ -1064,7 +1063,7 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Ingreso autorizado para {t['placa']} a las {hora_conf}")
-                                st.toast(f"Proceso exitoso: Ingreso de {t['placa']} registrado.", icon="✅")
+                                st.toast("Proceso Exitoso", icon="✔️")
                                 time.sleep(1)
                                 st.rerun()
 
@@ -1096,7 +1095,7 @@ if modo_qp == "vigilante":
                                         break
                                 guardar_datos(todos)
                                 st.success(f"Salida autorizada para {t['placa']} a las {hora_conf}")
-                                st.toast(f"Proceso exitoso: Salida de {t['placa']} registrada.", icon="✅")
+                                st.toast("Proceso Exitoso", icon="✔️")
                                 time.sleep(1)
                                 st.rerun()
 
@@ -1224,7 +1223,6 @@ if modo_qp == "operador":
                     st.success("Se ha deshecho la última acción correctamente.")
                     st.rerun()
             
-            # Buscador Operador
             busqueda_op = st.text_input("Buscar turno asignado o Placa", key="search_op").upper().strip()
             if busqueda_op:
                 turnos_g = [t for t in turnos_g if busqueda_op in t.get("placa", "").upper() or busqueda_op in t.get("id_turno", "").upper()]
@@ -1257,7 +1255,7 @@ if modo_qp == "operador":
 
                 if turno_sel:
                     with st.form(f"form_g_{id_sel}"):
-                        st.markdown("##### Editar Datos (Solo Placa y Ficho permitidos)")
+                        st.markdown("##### Editar Datos")
                         
                         nuevo_tiquet = st.text_input("Número de Ficho (Tiquet)", value=turno_sel.get('id_turno', '')).upper().strip()
                         nueva_placa = st.text_input("Placa del Vehículo", value=turno_sel.get('placa', '')).upper().strip()
@@ -1313,12 +1311,13 @@ if modo_qp == "operador":
                             if eliminar:
                                 if pass_confirm != CONFIG.get("contrasena_admin"):
                                     st.error("Contraseña incorrecta. No se puede eliminar el turno.")
+                                    st.toast("Proceso Denegado", icon="❌")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     turnos_g = [t for t in turnos_g if t.get("uid") != id_sel]
                                     guardar_datos(turnos_g)
                                     st.success(f"Turno {turno_sel['id_turno']} eliminado correctamente.")
-                                    st.toast("Proceso exitoso: Turno eliminado.", icon="✅")
+                                    st.toast("Proceso Exitoso", icon="✔️")
                                     time.sleep(1)
                                     st.rerun()
                             else:
@@ -1330,7 +1329,6 @@ if modo_qp == "operador":
                                     for t in turnos_g
                                 )
                                 
-                                # Fix Bug: Evaluar duplicados solo en la misma jornada del turno editado
                                 jornada_turno_sel = obtener_jornada(turno_sel.get("fecha_hora", ""))
                                 
                                 tiquet_duplicado = any(
@@ -1343,10 +1341,13 @@ if modo_qp == "operador":
 
                                 if placa_duplicada:
                                     st.error(f"La placa {nueva_placa} ya está registrada en otro turno activo.")
+                                    st.toast("Proceso Denegado", icon="❌")
                                 elif tiquet_duplicado:
                                     st.error(f"El Ficho {nuevo_tiquet} ya está en uso en esta misma jornada. Por favor asigne uno diferente.")
+                                    st.toast("Proceso Denegado", icon="❌")
                                 elif not nuevo_tiquet:
                                     st.error("El número de Ficho no puede estar vacío.")
+                                    st.toast("Proceso Denegado", icon="❌")
                                 else:
                                     st.session_state.historial_turnos.append(copy.deepcopy(turnos_g))
                                     for t in turnos_g:
@@ -1364,7 +1365,7 @@ if modo_qp == "operador":
                                             break
                                     guardar_datos(turnos_g)
                                     st.success("Cambios guardados exitosamente.")
-                                    st.toast("Proceso exitoso: Turno actualizado.", icon="✅")
+                                    st.toast("Proceso Exitoso", icon="✔️")
                                     time.sleep(1)
                                     st.rerun()
             else:
@@ -1476,7 +1477,7 @@ if modo_qp == "operador":
                     "titulo": "PANTALLA TV",
                     "subtitulo": "Televisor informativo",
                     "descripcion": "Abre este enlace en las pantallas para mostrar vehículos autorizados.",
-                    "color_hex": "#12402A",
+                    "color_hex": "#0F3A24",
                     "archivo_png": "qr_pantalla_zfc.png",
                 },
             ]
