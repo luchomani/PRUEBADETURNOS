@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import pandas as pd
 import streamlit as st
+import psycopg2
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -299,11 +300,121 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================================================
-# CAPA DE DATOS
+# CONEXIÓN A BASE DE DATOS (NEON / POSTGRESQL)
 # ==========================================================================
 DATA_FILE = "turnos_zfc.json"
 CONFIG_FILE = "config_zfc.json"
 
+# Streamlit leerá la URL desde sus Secrets.
+DATABASE_URL = st.secrets.get("DATABASE_URL", None)
+
+def _migrar_campos(item):
+    defaults = {
+        "uid": str(uuid.uuid4()),
+        "tipo_movimiento": "Ingresar",
+        "fecha_hora": ahora_str(),
+        "mostrar_en_pantalla": False,
+        "fecha_autorizacion": None,
+        "fecha_ingreso_zf": None,
+        "fecha_salida_zf": None,
+        "checklist_ingreso": {},
+        "checklist_salida": {},
+        "observaciones_vigilante": "",
+        "observaciones_conductor": "",
+        "telefono": "",
+    }
+    for k, v in defaults.items():
+        item.setdefault(k, v)
+
+def cargar_datos():
+    # Si tenemos la URL de Neon, usamos la base de datos
+    if DATABASE_URL:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            query = "SELECT * FROM turnos"
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            
+            if df.empty:
+                return []
+                
+            df["mostrar_en_pantalla"] = df["mostrar_en_pantalla"].apply(lambda x: bool(x) if x is not None else False)
+            df = df.fillna("")
+            
+            datos = df.to_dict(orient="records")
+            for item in datos:
+                _migrar_campos(item)
+            return datos
+        except Exception as e:
+            st.error(f"Error al conectar con la base de datos: {e}")
+            return []
+    else:
+        # Fallback al archivo local (por si acaso)
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    datos = json.load(f)
+                    for item in datos:
+                        _migrar_campos(item)
+                    return datos
+            except Exception:
+                return []
+        return []
+
+def guardar_datos(datos):
+    if DATABASE_URL:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cursor = conn.cursor()
+            
+            # Borramos la tabla y reinsertamos (es el método más limpio para esta arquitectura de lista completa)
+            cursor.execute("DELETE FROM turnos")
+            
+            if datos:
+                for t in datos:
+                    cursor.execute("""
+                        INSERT INTO turnos (
+                            uid, id_turno, placa, nombre, cedula, telefono, bodega, 
+                            tipo_movimiento, estado, fecha_hora, mensaje_admin, 
+                            mostrar_en_pantalla, fecha_autorizacion, fecha_ingreso_zf, 
+                            fecha_salida_zf, observaciones_conductor
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        t.get("uid"), t.get("id_turno"), t.get("placa"), t.get("nombre"), 
+                        t.get("cedula"), t.get("telefono"), t.get("bodega"), t.get("tipo_movimiento"), 
+                        t.get("estado"), t.get("fecha_hora"), t.get("mensaje_admin"), 
+                        bool(t.get("mostrar_en_pantalla", False)), t.get("fecha_autorizacion"), 
+                        t.get("fecha_ingreso_zf"), t.get("fecha_salida_zf"), t.get("observaciones_conductor")
+                    ))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            st.error(f"Error al guardar en la base de datos: {e}")
+            return False
+    else:
+        # Fallback al archivo local
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(datos, f, ensure_ascii=False, indent=2)
+        return True
+
+def cargar_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                return {**DEFAULT_CONFIG, **cfg}
+        except Exception:
+            pass
+    return DEFAULT_CONFIG.copy()
+
+def guardar_config(cfg):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+# ==========================================================================
+# CONFIGURACIÓN Y LÓGICA DE JORNADAS
+# ==========================================================================
 DEFAULT_CONFIG = {
     "config_version": 2, 
     "usuario_admin": "ZONAFRANCA123-",
@@ -378,54 +489,6 @@ def obtener_jornada_str(fecha_hora_str):
     if not dt: return ""
     inicio = obtener_inicio_jornada(dt)
     return inicio.strftime("%Y-%m-%d %H:%M:%S")
-
-def _migrar_campos(item):
-    defaults = {
-        "uid": str(uuid.uuid4()),
-        "tipo_movimiento": "Ingresar",
-        "fecha_hora": ahora_str(),
-        "mostrar_en_pantalla": False,
-        "fecha_autorizacion": None,
-        "fecha_ingreso_zf": None,
-        "fecha_salida_zf": None,
-        "checklist_ingreso": {},
-        "checklist_salida": {},
-        "observaciones_vigilante": "",
-        "observaciones_conductor": "",
-        "telefono": "",
-    }
-    for k, v in defaults.items():
-        item.setdefault(k, v)
-
-def cargar_datos():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                datos = json.load(f)
-                for item in datos:
-                    _migrar_campos(item)
-                return datos
-        except Exception:
-            return []
-    return []
-
-def guardar_datos(datos):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
-
-def cargar_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-                return {**DEFAULT_CONFIG, **cfg}
-        except Exception:
-            pass
-    return DEFAULT_CONFIG.copy()
-
-def guardar_config(cfg):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 # ==========================================================================
 # HELPERS Y EXPORTACIÓN A EXCEL
@@ -744,8 +807,6 @@ if modo_qp == "conductor":
                                 "fecha_autorizacion": None,
                                 "fecha_ingreso_zf": None,
                                 "fecha_salida_zf": None,
-                                "checklist_ingreso": {},
-                                "checklist_salida": {},
                                 "observaciones_vigilante": "",
                                 "observaciones_conductor": observaciones_conductor,
                             }
@@ -932,7 +993,6 @@ if modo_qp == "vigilante":
         if not turnos_h:
             st.info("No hay turnos registrados.")
         else:
-            # OPTIMIZACIÓN: Contadores sin cargar todo el DataFrame
             total = len(turnos_h)
             espera = sum(1 for t in turnos_h if "ESPERA" in (t.get("estado") or "").upper())
             autorizados = sum(1 for t in turnos_h if "AUTORIZADO" in (t.get("estado") or "").upper())
@@ -1022,7 +1082,6 @@ if modo_qp == "operador":
 
     st.markdown("---")
 
-    # OPTIMIZACIÓN: Se eliminó la pestaña de Pantalla Pública
     tab_gestion, tab_qr, tab_config, tab_historial = st.tabs([
         "Gestión de Turnos", "Código QR", "Configuración", "Historial",
     ])
@@ -1136,7 +1195,7 @@ if modo_qp == "operador":
                                             t["placa"] = nueva_placa_clean
                                             t["tipo_movimiento"] = nuevo_tipo
                                             t["estado"] = nuevo_estado
-                                            t["mostrar_en_pantalla"] = False # Siempre falso ahora
+                                            t["mostrar_en_pantalla"] = False
                                             if "AUTORIZADO" in nuevo_estado.upper() and "AUTORIZADO" not in antes:
                                                 t["fecha_autorizacion"] = ahora_str()
                                             break
@@ -1173,12 +1232,11 @@ if modo_qp == "operador":
             st.error("La librería **qrcode[pil]** no está instalada. Agrégala a `requirements.txt`.")
         else:
             st.markdown("##### Paso 2 · Descarga e imprime los códigos QR")
-            # OPTIMIZACIÓN: Se eliminó el QR de Pantalla TV
             portales = [
                 {"clave": "conductor", "titulo": "CONDUCTOR", "subtitulo": "Punto de enturnamiento", "descripcion": "El conductor escanea este QR y accede al formulario de registro.", "color_hex": "#1B4D3E", "archivo_png": "qr_conductor_zfc.png"},
                 {"clave": "vigilante", "titulo": "VIGILANTE", "subtitulo": "Punto de control / garita", "descripcion": "El vigilante escanea este QR y accede a su portal de check-in/out.", "color_hex": "#0D4A56", "archivo_png": "qr_vigilante_zfc.png"},
             ]
-            cols_qr = st.columns(2) # Ajustado a 2 columnas
+            cols_qr = st.columns(2)
             for idx, portal in enumerate(portales):
                 url_portal = f"{base_url}/?modo={portal['clave']}"
                 qr_bytes = generar_qr_png(url_portal)
@@ -1250,7 +1308,6 @@ if modo_qp == "operador":
         st.markdown("#### Exportar antes de limpiar")
         st.caption("Recomendación: descarga el historial en Excel antes de limpiar, para conservar evidencia de la jornada.")
         if total_registros > 0:
-            # OPTIMIZACIÓN: Generación de Excel bajo demanda
             if st.button("Preparar y Descargar Respaldo"):
                 df_clean = pd.DataFrame(turnos_actuales)
                 df_clean["fecha_hora"] = df_clean["fecha_hora"].apply(fecha_legible)
@@ -1267,7 +1324,6 @@ if modo_qp == "operador":
         if not turnos_h:
             st.info("No hay turnos registrados.")
         else:
-            # OPTIMIZACIÓN: Contadores
             total = len(turnos_h)
             espera = sum(1 for t in turnos_h if "ESPERA" in (t.get("estado") or "").upper())
             autorizados = sum(1 for t in turnos_h if "AUTORIZADO" in (t.get("estado") or "").upper())
@@ -1297,7 +1353,6 @@ if modo_qp == "operador":
             })
             st.dataframe(df_v, use_container_width=True, hide_index=True, height=450)
             
-            # OPTIMIZACIÓN: Botón que genera el Excel solo al hacer clic
             if st.button("Preparar y Descargar Excel"):
                 excel_data = generar_excel(df_v)
                 st.download_button("Haga clic aquí para descargar el archivo", data=excel_data, file_name=f"turnos_zfc_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
@@ -1312,7 +1367,6 @@ render_header_institucional()
 st.markdown("<h3 style='text-align:center; margin-top:10px;'>Selecciona tu Portal de Acceso</h3>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
-# OPTIMIZACIÓN: Se eliminó la columna 4 (Pantalla TV) y se ajustó a 3 columnas
 c1, c2, c3 = st.columns(3)
 
 with c1:
